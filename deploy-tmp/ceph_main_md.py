@@ -93,8 +93,6 @@ class deploy:
     def GET(self):
         user_data = web.input(act=None, page=0, pagesize=0, val=None, item=None, host=None, nearfull=None, full=None)
         # 检验act参数是否正确
-        print user_data.act
-        print DeployAct
         if user_data.act not in DeployAct:
             return 'error'
 
