@@ -28,17 +28,17 @@ class ReqDeploy:
         self.host_status_dict = dict()
         self.host_info = {
             u'network': {
-                u'private_network': '192.168.198.0', 
-                u'manage_network': '192.168.198.0', 
-                u'public_network': '192.168.198.0'
+                u'private_network': '10.211.55.0', 
+                u'manage_network': '10.211.55.0', 
+                u'public_network': '10.211.55.0'
             }, 
             u'ssh_port': '22', 
-            u'hostname': 'centos-virtual-2', 
+            u'hostname': 'CentOS-Virtual-2', 
             u'node_type': [u'mon'], 
             u'ips': {
-                u'private_network_ip': '192.168.198.129', 
-                u'manage_ip': '192.168.198.129', 
-                u'public_network_ip': '192.168.198.129'
+                u'private_network_ip': '10.211.55.6', 
+                u'manage_ip': '10.211.55.6', 
+                u'public_network_ip': '10.211.55.6'
             }, 
             u'rock_id': u'1', 
             u'ssh_user': u'root', 
@@ -68,11 +68,12 @@ class ReqDeploy:
         # 执行具体命令
         if self.act == 'check_pass_free':
             ret = self.check_pass_free()
-            resp.update(ret)
-        if ret.has_key('err') is False:
-            resp['status'] = 'success'
+            resp = self.update_resp(ret, resp)
+        elif self.act == 'check_network':
+            ret = self.check_network()
+            resp = self.update_resp(ret, resp)
         else:
-            resp['status'] = 'failed'
+            pass
  
         # 更新结果
         mtx = global_list.get_value('MUTEX')
@@ -82,8 +83,56 @@ class ReqDeploy:
         global_list.set_value('RESULTS',res)
         mtx.release()
 
+
+    def update_resp(self, ret, resp):
+        resp.update(ret)
+        if ret.has_key('err') is False:
+            resp['status'] = 'success'
+        else:
+            resp['status'] = 'failed'
+        return resp
+
+    def check_network(self):
+        err_dict = dict()
+        respdict = dict()
+        has_err = False
+        for k, v in self.host_info["ips"].items():
+            err_dict[k] = list()
+            ssh_client = self.get_ssh_client(v, 22, "root")
+            if not ssh_client:
+                err_dict[k].append("get ssh_client failed %s" % v)
+                has_err = True
+                continue
+            ret, info = self._run_command(ssh_client, 'ping -c 4 ' + v)
+            if ret is False:
+                info = 'HostEnv::_check_network: execute cmd failed, ' + info
+                self.logger.error(info)
+                has_err = True
+            if info.find('4 received') <= 0 and info.find('3 received') <= 0 \
+                    and info.find('2 received') <= 0 and info.find('1 received') <= 0:
+                err_dict[k].append("get ssh_client failed %s" % v)
+                has_err = True
+            ssh_client.close()
+        if has_err:
+            respdict["err"] = err_dict
+        return respdict
+
+    def _run_command(self, ssh_client, cmd):
+        """
+        执行指定的命令
+        :param cmd:
+        :return: True, result:成功 False, err_info：失败
+        """
+        ret = ssh_client.run_cmd(cmd)
+        if ret['ret'] == -1:
+            err_info = "HostEnv::_run_command: execute cmd: " + cmd + " error."
+            self.logger.error(err_info)
+            return False, err_info
+        return True, ret['out'].strip()
+
+
     def check_pass_free(self):
-        
+        respdict = dict()
         self.host_status_dict['hostname'] = self.host_info['hostname']
         self.host_status_dict['result'] = 'unfinished'
         self.host_status_dict['status'] = 'none'
@@ -93,21 +142,14 @@ class ReqDeploy:
         
         passless_login_cmd = 'ssh -p ' + str(self.host_info['ssh_port']) + ' -o stricthostkeychecking=no ' \
                              + self.host_info['ssh_user'] + '@' + self.host_info['hostname'] + ' "ls"'
-        print "passless_login_cmd", passless_login_cmd
         cmd_result_list = self._run_popen_cmd(passless_login_cmd)
         for cmd_result_item in cmd_result_list:
             if cmd_result_item.strip().find('password:') >= 0:
-                #self.logger.error("HostEnv::_init_system_var: ssh passwordless login failed. ")
-                print "HostEnv::_init_system_var: ssh passwordless login failed. "
-                return False
+                self.logger.error("HostEnv::_init_system_var: ssh passwordless login failed. ")
+                respdict['err'] = "HostEnv::_init_system_var: ssh passwordless login failed. "
 
-        if self._get_ssh_instance() is False:
-            #self.logger.error("HostEnv::_init_system_var: ssh connect failed, hostname is "
-            #                  + self.host_info['hostname'])
-            print "HostEnv::_init_system_var: ssh connect failed, hostname is " + self.host_info['hostname']
-            return False
-        self.logger.info("HostEnv::_init_system_var: get ssh_client instance success.")
-        return True
+        return respdict
+        
 
     def _run_popen_cmd(self, cmd):
         """
@@ -120,15 +162,14 @@ class ReqDeploy:
         ret.stdout.close()
         return cmd_result_list
 
-    def _get_ssh_instance(self):
+    def get_ssh_client(self, host_ip, ssh_port=22, ssh_user="root"):
         """
         获取ssh_client实例
         :return: True: 成功 False: 失败
         """
-        self.ssh_client = sshc.mySSH(self.host_info['hostname'],
-                                     int(self.host_info['ssh_port']), self.host_info['ssh_user'])
-        ret, err = self.ssh_client.connect()
+        ssh_client = sshc.mySSH(host_ip, ssh_port, ssh_user)
+        ret, err = ssh_client.connect()
         if ret is False:
-            self.logger.error("HostEnv::_get_ssh_instance: invoke ssh connect error.")
-            return False
-        return True
+            self.logger.error("ssh connect error.")
+            return 
+        return ssh_client

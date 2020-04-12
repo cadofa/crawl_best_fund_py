@@ -59,8 +59,8 @@ urls = (
 )
 
 # 各个class动作名称一览
-MonAct = ('getstats', 'getstatsbyregex', 'start', 'stop', 'restart', 'delete', 'add', 'gethosts'),
-DeployAct = ('check_pass_free'),
+MonAct = ('getstats', 'getstatsbyregex', 'start', 'stop', 'restart', 'delete', 'add', 'gethosts')
+DeployAct = ('check_pass_free', 'check_network')
 OsdAct = ('getstats', 'getstatsbyregex', 'start', 'stop', 'restart', 'getreweight', 'setreweight',
           'getnearfull', 'setnearfull', 'getfull', 'setfull', 'setout', 'setin', 'setall', 
           'getosdtree', 'getosddf')
@@ -93,6 +93,8 @@ class deploy:
     def GET(self):
         user_data = web.input(act=None, page=0, pagesize=0, val=None, item=None, host=None, nearfull=None, full=None)
         # 检验act参数是否正确
+        print user_data.act
+        print DeployAct
         if user_data.act not in DeployAct:
             return 'error'
 
