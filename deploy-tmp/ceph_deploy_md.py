@@ -72,6 +72,9 @@ class ReqDeploy:
         elif self.act == 'check_network':
             ret = self.check_network()
             resp = self.update_resp(ret, resp)
+        elif self.act == 'set_linux_source':
+            ret = self.set_linux_source()
+            resp = self.update_resp(ret, resp)
         else:
             pass
  
@@ -91,6 +94,11 @@ class ReqDeploy:
         else:
             resp['status'] = 'failed'
         return resp
+
+    def set_linux_source(self):
+        respdict = dict()
+        respdict['err'] = "set linux source"
+        return respdict
 
     def check_network(self):
         err_dict = dict()
