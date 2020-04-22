@@ -60,7 +60,7 @@ urls = (
 
 # 各个class动作名称一览
 MonAct = ('getstats', 'getstatsbyregex', 'start', 'stop', 'restart', 'delete', 'add', 'gethosts')
-DeployAct = ('check_pass_free', 'check_network', 'set_linux_source')
+DeployAct = ('init_host_env', )
 OsdAct = ('getstats', 'getstatsbyregex', 'start', 'stop', 'restart', 'getreweight', 'setreweight',
           'getnearfull', 'setnearfull', 'getfull', 'setfull', 'setout', 'setin', 'setall', 
           'getosdtree', 'getosddf')
