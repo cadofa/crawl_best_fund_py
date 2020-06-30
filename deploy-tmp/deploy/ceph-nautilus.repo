@@ -1,5 +1,0 @@
-[CTyun-Yum-Ceph-Rpm-nautilus]
-name=CentOS-$releasever - Ceph nautilus
-baseurl=http://10.39.31.241/ctyun/Ceph/rpm-nautilus/14.2.7/$basearch/
-gpgcheck=0
-enabled=1
