@@ -104,11 +104,18 @@ def create_mail_content(fund_data, type_name):
 
     best_fund_set = best_average_fund_set.intersection(best_variance_fund_set)
     best_fund_set.update(gt_best_fund_set)
-    best_fund_title = type_name + 'Best Fund:\n'
+    #best_fund_title = type_name + 'Best Fund:\n'
     best_fund_list = list(best_fund_set)
     best_fund_list.sort(key=lambda x: int(x.split()[3]))
-    best_content = best_fund_title + '\n'.join(best_fund_list)
+    best_content = '\n'.join(best_fund_list)
     return '\n\n\n'.join([best_content])
+
+def get_code_name(mail_content):
+    mail_content_list = mail_content.split("\n")
+    fund_code_name = list()
+    for i in mail_content_list:
+        fund_code_name.append("  ".join([i.split()[0], i.split()[1]]))
+    return fund_code_name
 
 
 if __name__ == '__main__':
@@ -137,14 +144,24 @@ if __name__ == '__main__':
         response_dict = crawl_data(url)
         fund_data = Computing_rankings(response_dict, weights_list)
         mail_content = create_mail_content(fund_data, type_name)
-        print "***************fund text******************"
+        print "******************%s FUND******************" % type_name
         print mail_content
+        code_name_one = get_code_name(mail_content)
+        
         fund_data = Computing_rankings(response_dict, weights_l_tw)
         mail_content = create_mail_content(fund_data, type_name)
-        print "\n***************fund text******************"
+        print "\n******************%s FUND******************" % type_name
         print mail_content
+        code_name_two = get_code_name(mail_content)
+        
         fund_data = Computing_rankings(response_dict, weights_l_th)
         mail_content = create_mail_content(fund_data, type_name)
-        print "\n***************fund text******************"
+        print "\n******************%s FUND******************" % type_name
         print mail_content
+        code_name_three = get_code_name(mail_content)
+        
+        print "\n******************%s BEST FUND******************" % type_name
+        for i in set(code_name_one).intersection(
+            set(code_name_two)).intersection(set(code_name_three)):
+            print i
 
