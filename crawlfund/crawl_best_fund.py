@@ -113,9 +113,30 @@ def create_mail_content(fund_data, type_name):
 def get_code_name(mail_content):
     mail_content_list = mail_content.split("\n")
     fund_code_name = list()
+    fund_code_name_dict = dict()
     for i in mail_content_list:
         fund_code_name.append("  ".join([i.split()[0], i.split()[1]]))
-    return fund_code_name
+        fund_code_name_dict.update({"  ".join([i.split()[0], i.split()[1]]) 
+                                         : [i.split()[2], i.split()[3]]})
+    return fund_code_name, fund_code_name_dict
+
+def create_best_fund(code_name_one, code_name_two, code_name_three,
+                    code_name_one_dict, code_name_two_dict, code_name_three_dict):
+    best_fund = list(set(code_name_one).intersection(
+                     set(code_name_two)).intersection(set(code_name_three)))
+    best_fund_list = list()
+    for i in best_fund:
+        rank_avg = numpy.mean([int(code_name_one_dict[i][0]), 
+                               int(code_name_two_dict[i][0]), 
+                               int(code_name_three_dict[i][0])])
+        var_avg = numpy.mean([int(code_name_one_dict[i][1]), 
+                               int(code_name_two_dict[i][1]), 
+                               int(code_name_three_dict[i][1])])
+        best_fund_list.append([i, int(rank_avg), int(var_avg)])
+    best_fund_list.sort(key = lambda x:x[2])
+    for i in best_fund_list:
+        print i[0],"", i[1],"", i[2]
+
 
 
 if __name__ == '__main__':
@@ -146,22 +167,21 @@ if __name__ == '__main__':
         mail_content = create_mail_content(fund_data, type_name)
         print "******************%s FUND******************" % type_name
         print mail_content
-        code_name_one = get_code_name(mail_content)
+        code_name_one, code_name_one_dict = get_code_name(mail_content)
         
         fund_data = Computing_rankings(response_dict, weights_l_tw)
         mail_content = create_mail_content(fund_data, type_name)
         print "\n******************%s FUND******************" % type_name
         print mail_content
-        code_name_two = get_code_name(mail_content)
+        code_name_two, code_name_two_dict = get_code_name(mail_content)
         
         fund_data = Computing_rankings(response_dict, weights_l_th)
         mail_content = create_mail_content(fund_data, type_name)
         print "\n******************%s FUND******************" % type_name
         print mail_content
-        code_name_three = get_code_name(mail_content)
+        code_name_three, code_name_three_dict = get_code_name(mail_content)
         
         print "\n******************%s BEST FUND******************" % type_name
-        for i in set(code_name_one).intersection(
-            set(code_name_two)).intersection(set(code_name_three)):
-            print i
+        create_best_fund(code_name_one, code_name_two, code_name_three,
+                         code_name_one_dict, code_name_two_dict, code_name_three_dict)
 
