@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 START = 2500
+SAMPLE_SIZE = 10000
+TEST_COUNT = 2
 
 def generate_random_number(start, step, swing):
     global START
@@ -24,7 +26,7 @@ def create_index_data():
     start = START
     print "start", start
     print "swing", swing
-    for i in range(16000):
+    for i in range(SAMPLE_SIZE):
         start = generate_random_number(start, 1, swing)
         random_number_list.append(start)
 
@@ -108,19 +110,20 @@ def test_strategy():
     print "\n"
     return market_data
 
-for i in range(1,2):
-    image_name = "image%s.png" % i
+for i in range(1,TEST_COUNT):
+    image_name = "image/image%s.png" % i
     print "start", image_name
     fut_data = test_strategy()
     ypoints = np.array(fut_data)
 
     plt.plot(ypoints)
     for i in range(30):
-        x_p = random.randint(0,16000)
+        x_p = random.randint(0,SAMPLE_SIZE)
         plt.annotate("B", [x_p, fut_data[x_p]], color="red")
     for i in range(30):
-        x_p = random.randint(0,16000)
+        x_p = random.randint(0,SAMPLE_SIZE)
         plt.annotate("S", [x_p, fut_data[x_p]], color="green")
+    plt.text(6800, 2500, "Profit and loss -1000", fontsize=16)
     plt.savefig(image_name)
     plt.close()
     
