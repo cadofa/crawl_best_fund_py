@@ -1,6 +1,10 @@
 #! -*-coding: utf8-*-
 import random
 import time
+import matplotlib as mpl
+mpl.use('Agg')
+import numpy as np
+import matplotlib.pyplot as plt
 
 START = 2500
 
@@ -14,13 +18,13 @@ def generate_random_number(start, step, swing):
     return start + random.choice(choice_list)
 
 def create_index_data():
-    swing = random.choice([0.01, 0.02, 0.03, 0.04, 0.05])
+    swing = random.choice([0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05])
     random_number_list = []
     global START
     start = START
     print "start", start
     print "swing", swing
-    for i in range(21600):
+    for i in range(20000):
         start = generate_random_number(start, 1, swing)
         random_number_list.append(start)
 
@@ -102,6 +106,15 @@ def test_strategy():
         #print
     print "平仓收益总和", sum(close_gain_list)
     print
+    return market_data
 
-for i in range(10):
-    test_strategy()
+for i in range(1,10):
+    image_name = "image%s.png" % i
+    print "start", image_name
+    fut_data = test_strategy()
+    ypoints = np.array(fut_data)
+
+    plt.plot(ypoints)
+    plt.savefig(image_name)
+    plt.close()
+    
