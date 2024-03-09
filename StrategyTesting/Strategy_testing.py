@@ -24,7 +24,7 @@ def create_index_data():
     start = START
     print "start", start
     print "swing", swing
-    for i in range(20000):
+    for i in range(16000):
         start = generate_random_number(start, 1, swing)
         random_number_list.append(start)
 
@@ -105,16 +105,22 @@ def test_strategy():
         #time.sleep(1)
         #print
     print "平仓收益总和", sum(close_gain_list)
-    print
+    print "\n"
     return market_data
 
-for i in range(1,10):
+for i in range(1,2):
     image_name = "image%s.png" % i
     print "start", image_name
     fut_data = test_strategy()
     ypoints = np.array(fut_data)
 
     plt.plot(ypoints)
+    for i in range(30):
+        x_p = random.randint(0,16000)
+        plt.annotate("B", [x_p, fut_data[x_p]], color="red")
+    for i in range(30):
+        x_p = random.randint(0,16000)
+        plt.annotate("S", [x_p, fut_data[x_p]], color="green")
     plt.savefig(image_name)
     plt.close()
     
