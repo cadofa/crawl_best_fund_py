@@ -118,12 +118,12 @@ for i in range(1,TEST_COUNT):
 
     plt.plot(ypoints)
     for i in range(30):
-        x_p = random.randint(0,SAMPLE_SIZE)
+        x_p = random.randint(0,SAMPLE_SIZE-1)
         plt.annotate("B", [x_p, fut_data[x_p]], color="red")
     for i in range(30):
-        x_p = random.randint(0,SAMPLE_SIZE)
+        x_p = random.randint(0,SAMPLE_SIZE-1)
         plt.annotate("S", [x_p, fut_data[x_p]], color="green")
-    plt.text(6800, 2500, "Profit and loss -1000", fontsize=16)
+    plt.text(2580, 2500, "Profit and loss -1000", fontsize=16)
     plt.savefig(image_name)
     plt.close()
     
