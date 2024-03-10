@@ -54,14 +54,28 @@ def test_strategy():
     for i in market_data:
         x_c += 1
         #print
-        #print "------------------最新行情---------------------", i, "x坐标值", x_c
+        #print "操作记录", operation_stack
+        #print "累计盈亏", profit_loss
         #print
-        #没有持仓买入
-        if not len(position_list):
+        #print "-----------------------最新行情------------------------", i, 
+        #print
+
+        #初始化建仓
+        if not position_list and not operation_stack:
             position_list.append(i)
             operation_stack.append((x_c, i, "B"))
             continue
 
+        #有过操作，没有持仓
+        if operation_stack and not position_list:
+            #如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
+            if operation_stack[-1][2] == "S" and operation_stack[-1][1] - i >= touch_top_step:
+                position_list.append(i)
+                operation_stack.append((x_c, i, "B"))
+                continue
+
+            continue
+        
         last_index = position_list.index(position_list[-1])
         #根据买入步长逐步买进
         if (position_list[-1] - i) >= copy_bottom_step[last_index]:
@@ -76,9 +90,6 @@ def test_strategy():
             position_list.remove(position_list[-1])
             profit_loss["profit_loss_close"] = profit_loss["profit_loss_close"] + profit_loss_this_close
 
-            if not len(position_list):
-                position_list.append(i)
-                operation_stack.append((x_c, i, "B"))
             continue
 
         #如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
@@ -88,15 +99,9 @@ def test_strategy():
             position_list.remove(position_list[-1])
             profit_loss["profit_loss_close"] = profit_loss["profit_loss_close"] + profit_loss_this_close
 
-            if not len(position_list):
-                position_list.append(i)
-                operation_stack.append((x_c, i, "B"))
             continue
 
-        #print "操作记录", operation_stack
-        #print "累计盈亏", profit_loss
         #time.sleep(2)
-
     print "持仓数据", position_list, "收盘数据", market_data[-1]
     position_close_profit = sum([(market_data[-1] - i) for i in position_list])
     print "收盘持仓结算盈亏", position_close_profit
@@ -114,7 +119,7 @@ for i in range(1, TEST_COUNT):
     print
     profit_loss_sum.append(profit_loss["profit_loss"])
     #time.sleep(2)
-    """
+
     ypoints = np.array(fut_data)
     plt.plot(ypoints)
     #print "操作记录", operation_stack
@@ -126,7 +131,7 @@ for i in range(1, TEST_COUNT):
     plt.text(580, 2500, str(profit_loss), fontsize=13)
     plt.savefig(image_name)
     plt.close()
-    """
+    
 
     position_list = []
     operation_stack = []
