@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 
 START = 2500
 SAMPLE_SIZE = 10000
-TEST_COUNT = 50
+TEST_COUNT = 101
 copy_bottom_step = [3,5,8,13,21,34,55,89,144,233]
-touch_top_step = 5
+touch_top_step = 3
 position_list = []
 operation_stack = []
 profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
@@ -60,12 +60,14 @@ def test_strategy():
         if not len(position_list):
             position_list.append(i)
             operation_stack.append((x_c, i, "B"))
-            
+            continue
+
         last_index = position_list.index(position_list[-1])
         #根据买入步长逐步买进
         if (position_list[-1] - i) >= copy_bottom_step[last_index]:
             position_list.append(i)
             operation_stack.append((x_c, i, "B"))
+            continue
         
         #如果比上一次买入高指定步长，卖出
         if operation_stack[-1][2] == "B" and (i - position_list[-1]) >= touch_top_step:
@@ -77,6 +79,8 @@ def test_strategy():
             if not len(position_list):
                 position_list.append(i)
                 operation_stack.append((x_c, i, "B"))
+            continue
+
         #如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
         if operation_stack[-1][2] == "S" and i - operation_stack[-1][1] >= touch_top_step and len(position_list) > 0:
             operation_stack.append((x_c, i, "S"))
@@ -87,6 +91,7 @@ def test_strategy():
             if not len(position_list):
                 position_list.append(i)
                 operation_stack.append((x_c, i, "B"))
+            continue
 
         #print "操作记录", operation_stack
         #print "累计盈亏", profit_loss
@@ -109,22 +114,25 @@ for i in range(1, TEST_COUNT):
     print
     profit_loss_sum.append(profit_loss["profit_loss"])
     #time.sleep(2)
-    ypoints = np.array(fut_data)
     """
+    ypoints = np.array(fut_data)
     plt.plot(ypoints)
-    for i in range(30):
-        x_p = random.randint(0,SAMPLE_SIZE-1)
-        plt.annotate("B", [x_p, fut_data[x_p]], color="red")
-    for i in range(30):
-        x_p = random.randint(0,SAMPLE_SIZE-1)
-        plt.annotate("S", [x_p, fut_data[x_p]], color="green")
-    plt.text(2580, 2500, "Profit and loss -1000", fontsize=16)
+    #print "操作记录", operation_stack
+    #for i in operation_stack:
+    #    if operation_stack[-1][2] == "B":
+    #        plt.annotate("B", [i[0], i[1]], color="red", fontsize=10)
+    #    if operation_stack[-1][2] == "S":
+    #        plt.annotate("S", [i[0], i[1]], color="green", fontsize=10)
+    plt.text(580, 2500, str(profit_loss), fontsize=13)
     plt.savefig(image_name)
     plt.close()
     """
+
     position_list = []
     operation_stack = []
     profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 
-print "多次累计盈亏列表", profit_loss_sum
+print "多次累计盈亏列表", profit_loss_sum, len(profit_loss_sum)
+print "亏损次数", len([i for i in profit_loss_sum if i < 0])
+print "盈利次数", len([i for i in profit_loss_sum if i > 0])
 print "多次累计盈亏总和", sum(profit_loss_sum)
