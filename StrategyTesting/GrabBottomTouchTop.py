@@ -53,13 +53,6 @@ def test_strategy():
     x_c = -1
     for i in market_data:
         x_c += 1
-        #print
-        #print "操作记录", operation_stack
-        #print "累计盈亏", profit_loss
-        #print
-        #print "-----------------------最新行情------------------------", i, 
-        #print
-
         #初始化建仓
         if not position_list and not operation_stack:
             position_list.append(i)
@@ -71,7 +64,7 @@ def test_strategy():
             #如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
             if operation_stack[-1][2] == "S" and operation_stack[-1][1] - i >= touch_top_step:
                 position_list.append(i)
-                operation_stack.append((x_c, i, "B"))
+                operation_stack.remove(operation_stack[-1])
                 continue
 
             continue
@@ -80,7 +73,7 @@ def test_strategy():
         #根据买入步长逐步买进
         if (position_list[-1] - i) >= copy_bottom_step[last_index]:
             position_list.append(i)
-            operation_stack.append((x_c, i, "B"))
+            #operation_stack.append((x_c, i, "B"))
             continue
         
         #如果比上一次买入高指定步长，卖出
