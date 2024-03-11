@@ -10,7 +10,7 @@ START = 2500
 SAMPLE_SIZE = 10000
 TEST_COUNT = 101
 copy_bottom_step = [3,5,8,13,21,34,55,89,144,233]
-touch_top_step = 3
+touch_top_step = 8
 position_list = []
 operation_stack = []
 profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
@@ -52,19 +52,26 @@ def test_strategy():
     market_data = create_index_data()
     x_c = -1
     for i in market_data:
+        #print
+        #print "----------------------------最新行情---------------------------------------", i
+        #print
         x_c += 1
         #初始化建仓
         if not position_list and not operation_stack:
-            position_list.append(i)
+            position_list.append(i + 1)
             operation_stack.append((x_c, i, "B"))
+            #print "买入开仓", i
+            #print "持仓详情", position_list
             continue
 
         #有过操作，没有持仓
         if operation_stack and not position_list:
             #如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
             if operation_stack[-1][2] == "S" and operation_stack[-1][1] - i >= touch_top_step:
-                position_list.append(i)
-                operation_stack.remove(operation_stack[-1])
+                #print "买入开仓", i
+                #print "持仓详情", position_list
+                position_list.append(i + 1)
+                operation_stack.append((x_c, i + 1, "B"))
                 continue
 
             continue
@@ -72,14 +79,16 @@ def test_strategy():
         last_index = position_list.index(position_list[-1])
         #根据买入步长逐步买进
         if (position_list[-1] - i) >= copy_bottom_step[last_index]:
-            position_list.append(i)
-            #operation_stack.append((x_c, i, "B"))
+            position_list.append(i + 1)
+            operation_stack.append((x_c, i + 1, "B"))
+            #print "买入开仓", i
+            #print "持仓详情", position_list
             continue
         
         #如果比上一次买入高指定步长，卖出
-        if operation_stack[-1][2] == "B" and (i - position_list[-1]) >= touch_top_step:
-            operation_stack.append((x_c, i, "S"))
-            profit_loss_this_close = i - position_list[-1]
+        if (i - position_list[-1]) >= touch_top_step:
+            operation_stack.append((x_c, i - 1, "S"))
+            profit_loss_this_close = (i - 1)  - position_list[-1]
             position_list.remove(position_list[-1])
             profit_loss["profit_loss_close"] = profit_loss["profit_loss_close"] + profit_loss_this_close
 
@@ -87,8 +96,8 @@ def test_strategy():
 
         #如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
         if operation_stack[-1][2] == "S" and i - operation_stack[-1][1] >= touch_top_step and len(position_list) > 0:
-            operation_stack.append((x_c, i, "S"))
-            profit_loss_this_close = i - position_list[-1]
+            operation_stack.append((x_c, i - 1, "S"))
+            profit_loss_this_close = i - 1 - position_list[-1]
             position_list.remove(position_list[-1])
             profit_loss["profit_loss_close"] = profit_loss["profit_loss_close"] + profit_loss_this_close
 
@@ -112,20 +121,19 @@ for i in range(1, TEST_COUNT):
     print
     profit_loss_sum.append(profit_loss["profit_loss"])
     #time.sleep(2)
-
+    """
     ypoints = np.array(fut_data)
     plt.plot(ypoints)
     #print "操作记录", operation_stack
-    #for i in operation_stack:
-    #    if operation_stack[-1][2] == "B":
-    #        plt.annotate("B", [i[0], i[1]], color="red", fontsize=10)
-    #    if operation_stack[-1][2] == "S":
-    #        plt.annotate("S", [i[0], i[1]], color="green", fontsize=10)
+    for i in operation_stack:
+        if operation_stack[-1][2] == "B":
+            plt.annotate("B", [i[0], i[1]], color="red")
+        if operation_stack[-1][2] == "S":
+            plt.annotate("S", [i[0], i[1]], color="green")
     plt.text(580, 2500, str(profit_loss), fontsize=13)
     plt.savefig(image_name)
     plt.close()
-    
-
+    """
     position_list = []
     operation_stack = []
     profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
