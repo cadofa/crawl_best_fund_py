@@ -7,8 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 START = 2500
-SAMPLE_SIZE = 3000
-TEST_COUNT = 101
+SAMPLE_SIZE = 5000
+TEST_COUNT = 251
 copy_bottom_step = [5,8,13,21,34,55,89,144,233]
 touch_top_step = 8
 position_list = []
@@ -61,7 +61,7 @@ def test_strategy():
         if not position_list and not operation_stack:
             position_list.append(i + 1)
             #print "持仓详情", position_list
-            operation_stack.append((x_c, i, "B"))
+            operation_stack.append((x_c, i + 1, "B"))
             continue
 
         #有过操作，没有持仓
@@ -123,7 +123,7 @@ for i in range(1, TEST_COUNT):
     print
     profit_loss_sum.append(profit_loss["profit_loss"])
     #time.sleep(2)
-    
+    """   
     ypoints = np.array(fut_data)
     plt.plot(ypoints)
     #print "操作记录", operation_stack
@@ -135,7 +135,7 @@ for i in range(1, TEST_COUNT):
     plt.text(180, 2500, str(profit_loss), fontsize=13)
     plt.savefig(image_name)
     plt.close()
-    
+    """
     position_list = []
     operation_stack = []
     profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
