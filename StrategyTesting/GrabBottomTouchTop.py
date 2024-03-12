@@ -1,39 +1,63 @@
 #! -*-coding: utf8-*-
 import random
 import time
+import pickle
 import matplotlib as mpl
 mpl.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
 
-START = 2500
+
+def get_position_list():
+    try:
+        with open('position.pk', 'rb') as file:
+            position = pickle.load(file)
+        return position
+    except IOError, e:
+        return []
+
+def get_close_price():
+    try:
+        with open('close.pk', 'rb') as file:
+            close = pickle.load(file)
+        return close
+    except IOError, e:
+        return 2500
+
+def save_close_price(close):
+    with open('close.pk', 'wb') as file:
+        pickle.dump(close, file)
+
 SAMPLE_SIZE = 5000
-TEST_COUNT = 251
+TEST_COUNT = 10
+
 copy_bottom_step = [5,8,13,21,34,55,89,144,233]
+
 touch_top_step = 8
-position_list = []
+position_list = get_position_list()
 operation_stack = []
 profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 profit_loss_sum = []
 
 
-def generate_random_number(m_data, step, swing):
-    choice_list = [0, step, (0 - step), (step + 1), (0 - step - 1)]
-    if m_data < START * (1 - swing):
+def generate_random_number(start, m_data, step, swing):
+    #choice_list = [0, step, (0 - step), (step + 1), (0 - step - 1)]
+    choice_list = [0, step, (0 - step)]
+    if m_data < start * (1 - swing):
         return m_data + 1
-    if m_data > START * (1 + swing):
+    if m_data > start * (1 + swing):
         return m_data - 1
     return m_data + random.choice(choice_list)
 
 def create_index_data():
-    swing = random.choice([0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05])
+    swing = random.choice([0.005, 0.01, 0.015, 0.02, 0.025])
     random_number_list = []
-    global START
-    m_data = START
+    start = get_close_price()
+    m_data = start
     print "start", m_data
     print "swing", swing
     for i in range(SAMPLE_SIZE):
-        m_data = generate_random_number(m_data, 1, swing)
+        m_data = generate_random_number(start, m_data, 1, swing)
         random_number_list.append(m_data)
 
     step_list = []
@@ -107,6 +131,7 @@ def test_strategy():
 
         #time.sleep(1)
     print "持仓数据", position_list, "收盘数据", market_data[-1]
+    save_close_price(market_data[-1])
     position_close_profit = sum([(market_data[-1] - i) for i in position_list])
     print "收盘持仓结算盈亏", position_close_profit
     profit_loss["profit_loss_position"] = position_close_profit
