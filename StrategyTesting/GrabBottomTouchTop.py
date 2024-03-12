@@ -7,15 +7,6 @@ mpl.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
 
-
-def get_position_list():
-    try:
-        with open('position.pk', 'rb') as file:
-            position = pickle.load(file)
-        return position
-    except IOError, e:
-        return []
-
 def get_close_price():
     try:
         with open('close.pk', 'rb') as file:
@@ -28,34 +19,36 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-SAMPLE_SIZE = 5000
-TEST_COUNT = 10
+SAMPLE_SIZE = 10000
+TEST_COUNT = 1001
 
-copy_bottom_step = [5,8,13,21,34,55,89,144,233]
+copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
 
 touch_top_step = 8
-position_list = get_position_list()
-operation_stack = []
+
 profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 profit_loss_sum = []
 
 
 def generate_random_number(start, m_data, step, swing):
-    #choice_list = [0, step, (0 - step), (step + 1), (0 - step - 1)]
-    choice_list = [0, step, (0 - step)]
+    choice_list = [0, step, (0 - step), step * 2, (0 - step)*2]
     if m_data < start * (1 - swing):
         return m_data + 1
     if m_data > start * (1 + swing):
         return m_data - 1
+    if m_data < 2000:
+        return m_data + 1
+    if m_data > 3500:
+        return m_data - 1
     return m_data + random.choice(choice_list)
 
 def create_index_data():
-    swing = random.choice([0.005, 0.01, 0.015, 0.02, 0.025])
+    swing = random.choice([0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05])
     random_number_list = []
-    start = get_close_price()
+    start = get_close_price() + random.choice([0, -3,-5,-8,-13,3,5,8,13])
     m_data = start
-    print "start", m_data
-    print "swing", swing
+    print "开盘价", m_data
+    print "日内振幅", swing
     for i in range(SAMPLE_SIZE):
         m_data = generate_random_number(start, m_data, 1, swing)
         random_number_list.append(m_data)
@@ -67,13 +60,15 @@ def create_index_data():
     index_list = []
     for i in range(len(step_list)):
         index_list.append((random_number_list[i], step_list[i]))
-    print "max", max(random_number_list)
-    print "min", min(random_number_list)
+    print "最高价", max(random_number_list)
+    print "最低价", min(random_number_list)
     return random_number_list
 
 def test_strategy():
     global operation_stack, position_list, copy_bottom_step, profit_loss, touch_top_step
     market_data = create_index_data()
+    position_list = []
+    operation_stack = []
     x_c = 0
     for i in market_data:
         #print
@@ -130,7 +125,8 @@ def test_strategy():
             continue
 
         #time.sleep(1)
-    print "持仓数据", position_list, "收盘数据", market_data[-1]
+    print "持仓数据", position_list, "收盘价", market_data[-1]
+    #save_position_list(position_list)
     save_close_price(market_data[-1])
     position_close_profit = sum([(market_data[-1] - i) for i in position_list])
     print "收盘持仓结算盈亏", position_close_profit
@@ -169,5 +165,7 @@ print "多次累计盈亏列表", profit_loss_sum, len(profit_loss_sum)
 print "最大亏损", min(profit_loss_sum)
 print "最大盈利", max(profit_loss_sum)
 print "亏损次数", len([i for i in profit_loss_sum if i < 0])
-print "盈利次数", len([i for i in profit_loss_sum if i > 0])
+win_count =  len([i for i in profit_loss_sum if i > 0])
+print "盈利次数", win_count
+print "总体胜率", float(win_count)/len(profit_loss_sum)
 print "多次累计盈亏总和", sum(profit_loss_sum)
