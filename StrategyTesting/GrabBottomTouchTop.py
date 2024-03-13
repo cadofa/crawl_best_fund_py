@@ -19,8 +19,8 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-SAMPLE_SIZE = 1800
-TEST_COUNT = 11
+SAMPLE_SIZE = 3600
+TEST_COUNT = 4 * 5 + 1
 
 copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
 
@@ -153,7 +153,7 @@ for i in range(1, TEST_COUNT):
     print
     profit_loss_sum.append(profit_loss["profit_loss"])
     #time.sleep(2)
-    """   
+       
     ypoints = np.array(fut_data)
     plt.plot(ypoints)
     #print "操作记录", operation_stack
@@ -162,10 +162,10 @@ for i in range(1, TEST_COUNT):
             plt.annotate("B", [i[0], i[1]], color="red")
         if operation_stack[-1][2] == "S":
             plt.annotate("S", [i[0], i[1]], color="green")
-    plt.text(180, 2500, str(profit_loss), fontsize=13)
+    plt.text(118, max(fut_data), str(profit_loss), fontsize=12)
     plt.savefig(image_name)
     plt.close()
-    """
+    
     position_list = []
     operation_stack = []
     profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
