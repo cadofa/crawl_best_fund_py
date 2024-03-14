@@ -20,7 +20,7 @@ def save_close_price(close):
         pickle.dump(close, file)
 
 SAMPLE_SIZE = 3600
-TEST_COUNT = 4 * 5 + 1
+TEST_COUNT = 4 * 5 * 4 + 1
 
 copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
 
@@ -43,7 +43,7 @@ def generate_random_number(start, m_data, step, swing):
     return m_data + random.choice(choice_list)
 
 def create_index_data():
-    swing = random.choice([0.003, 0.005, 0.008, 0.013, 0.021, 0.034, 0.055])
+    swing = random.choice([0.003, 0.005, 0.005, 0.008, 0.008, 0.013, 0.021, 0.034, 0.055])
     random_number_list = []
     start = get_close_price() + random.choice([0, -3,-5,-8,-13,3,5,8,13])
     m_data = start
@@ -90,7 +90,7 @@ def test_strategy():
             #如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
             if operation_stack[-1][2] == "S" and operation_stack[-1][1] - i >= touch_top_step:
                 position_list.append(i + 1)
-                print "上一次操作是卖出，当前价格比上一次卖出价格低出步长，继续买"
+                print "上一次操作是卖出，当前价格比上一次卖出价格低出摸顶步长，继续买"
                 print "买入开仓", i+1
                 print "持仓详情", position_list
                 operation_stack.append((x_c, i + 1, "B"))
@@ -102,7 +102,7 @@ def test_strategy():
         #根据买入步长逐步买进
         if (position_list[-1] - i) >= copy_bottom_step[last_index]:
             position_list.append(i + 1)
-            print "最后持仓点位比当前点位高出步长继续买入开仓"
+            print "最后持仓点位比当前点位高出指定间隔步长继续买入开仓"
             print "买入开仓", i+1
             print "持仓详情", position_list
             operation_stack.append((x_c, i + 1, "B"))
@@ -111,7 +111,7 @@ def test_strategy():
         #如果比上一次买入高指定步长，卖出
         if (i - position_list[-1]) >= touch_top_step:
             operation_stack.append((x_c, i - 1, "S"))
-            print "当前价格比上一次买入高指定步长，卖出平仓"
+            print "当前价格比上一次买入高摸顶步长，卖出平仓"
             print "卖出平仓", i - 1
             profit_loss_this_close = (i - 1)  - position_list[-1]
             position_list.remove(position_list[-1])
@@ -124,7 +124,7 @@ def test_strategy():
         #如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
         if operation_stack[-1][2] == "S" and i - operation_stack[-1][1] >= touch_top_step and len(position_list) > 0:
             operation_stack.append((x_c, i - 1, "S"))
-            print "上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖出平仓"
+            print "上一次是卖出，当前价格比上一次卖出价格高出摸顶步长，继续卖出平仓"
             print "卖出平仓", i - 1
             profit_loss_this_close = i - 1 - position_list[-1]
             position_list.remove(position_list[-1])
@@ -153,7 +153,7 @@ for i in range(1, TEST_COUNT):
     print
     profit_loss_sum.append(profit_loss["profit_loss"])
     #time.sleep(2)
-       
+         
     ypoints = np.array(fut_data)
     plt.plot(ypoints)
     #print "操作记录", operation_stack
@@ -170,7 +170,13 @@ for i in range(1, TEST_COUNT):
     operation_stack = []
     profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 
-print "多次累计盈亏列表", profit_loss_sum, len(profit_loss_sum)
+print "历史盈亏列表", profit_loss_sum, len(profit_loss_sum)
+total_profit_loss = 0
+total_profit_loss_list = []
+for i in profit_loss_sum:
+    total_profit_loss += i
+    total_profit_loss_list.append(total_profit_loss)
+print "累计盈亏列表", total_profit_loss_list
 print "最大亏损", min(profit_loss_sum)
 print "最大盈利", max(profit_loss_sum)
 print "亏损次数", len([i for i in profit_loss_sum if i < 0])
@@ -178,3 +184,8 @@ win_count =  len([i for i in profit_loss_sum if i > 0])
 print "盈利次数", win_count
 print "总体胜率", float(win_count)/len(profit_loss_sum)
 print "多次累计盈亏总和", sum(profit_loss_sum)
+
+total_profit = np.array(total_profit_loss_list)
+plt.plot(total_profit)
+plt.savefig("image/YieldCurve.png")
+plt.close()
