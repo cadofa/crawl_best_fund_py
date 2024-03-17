@@ -10,8 +10,8 @@ class GrabBomTouchTop_MA(CtaTemplate):
         super().__init__()
         self.vtSymbol = "MA405"
         self.exchange = "CZCE"
-        self.touch_top_step = 2
-        self.copy_bottom_step = [2,2,2,2,2,2,2,2,2,2,2,2,2] * 3
+        self.touch_top_step = 8
+        self.copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
