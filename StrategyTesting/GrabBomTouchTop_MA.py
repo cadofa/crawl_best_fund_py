@@ -6,7 +6,6 @@ from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
 class GrabBomTouchTop_MA(CtaTemplate):
-    """仅供测试_可调节 K 线周期的双均线交易策略"""
     def __init__(self):
         super().__init__()
         self.vtSymbol = "MA405"
