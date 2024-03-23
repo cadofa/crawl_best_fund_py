@@ -22,9 +22,9 @@ def save_close_price(close):
 SAMPLE_SIZE = 3600
 TEST_COUNT = 4 * 5 * 4 + 1
 
-copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
+copy_top_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
 
-touch_top_step = 8
+touch_bottom_step = 8
 
 profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 profit_loss_sum = []
@@ -65,7 +65,7 @@ def create_index_data():
     return random_number_list
 
 def test_strategy():
-    global operation_stack, position_list, copy_bottom_step, profit_loss, touch_top_step
+    global operation_stack, position_list, copy_top_step, profit_loss, touch_bottom_step
     market_data = create_index_data()
     position_list = []
     operation_stack = []
@@ -78,42 +78,42 @@ def test_strategy():
         x_c += 1
         #初始化建仓
         if not position_list and not operation_stack:
-            position_list.append(i + 1)
+            position_list.append(i - 1)
             print "初始化建仓"
-            print "买入开仓", i+1
+            print "卖出开仓", i+1
             print "持仓详情", position_list
-            operation_stack.append((x_c, i + 1, "B"))
+            operation_stack.append((x_c, i - 1, "S"))
             continue
 
         #有过操作，没有持仓
         if operation_stack and not position_list:
-            #如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
-            if operation_stack[-1][2] == "S" and operation_stack[-1][1] - i >= touch_top_step:
-                position_list.append(i + 1)
-                print "上一次操作是卖出，当前价格比上一次卖出价格低出摸顶步长，继续买"
-                print "买入开仓", i+1
+            #如果上一次是买入，当前价格比上一次买入价格高出步长，继续卖
+            if operation_stack[-1][2] == "B" and i - operation_stack[-1][1] >= touch_bottom_step:
+                position_list.append(i - 1)
+                print "上一次操作是买入，当前价格比上一次买入价格高出摸底步长，继续卖"
+                print "卖出开仓", i - 1
                 print "持仓详情", position_list
-                operation_stack.append((x_c, i + 1, "B"))
+                operation_stack.append((x_c, i - 1, "S"))
                 continue
 
             continue
         
         last_index = position_list.index(position_list[-1])
-        #根据买入步长逐步买进
-        if (position_list[-1] - i) >= copy_bottom_step[last_index]:
-            position_list.append(i + 1)
-            print "当前点位比最后持仓点位低出指定间隔步长继续买入开仓"
-            print "买入开仓", i+1
+        #根据卖出步长逐步卖出
+        if (i - position_list[-1]) >= copy_top_step[last_index]:
+            position_list.append(i - 1)
+            print "当前点位比最后持仓点位高出指定间隔步长继续卖出开仓"
+            print "卖出开仓", i - 1
             print "持仓详情", position_list
-            operation_stack.append((x_c, i + 1, "B"))
+            operation_stack.append((x_c, i - 1, "S"))
             continue
         
-        #如果比上一次买入高指定步长，卖出
-        if (i - position_list[-1]) >= touch_top_step:
-            operation_stack.append((x_c, i - 1, "S"))
-            print "当前价格比上一次买入高摸顶步长，卖出平仓"
-            print "卖出平仓", i - 1
-            profit_loss_this_close = (i - 1)  - position_list[-1]
+        #如果比上一次卖出低指定步长，买入
+        if (position_list[-1] - i) >= touch_bottom_step:
+            operation_stack.append((x_c, i + 1, "B"))
+            print "当前价格比上一次卖出低摸底步长，买入平仓"
+            print "买入平仓", i + 1
+            profit_loss_this_close = position_list[-1] - (i + 1)
             position_list.remove(position_list[-1])
             print "持仓详情", position_list
             profit_loss["profit_loss_close"] = profit_loss["profit_loss_close"] + profit_loss_this_close
@@ -121,12 +121,12 @@ def test_strategy():
 
             continue
 
-        #如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
-        if operation_stack[-1][2] == "S" and i - operation_stack[-1][1] >= touch_top_step and len(position_list) > 0:
-            operation_stack.append((x_c, i - 1, "S"))
-            print "上一次是卖出，当前价格比上一次卖出价格高出摸顶步长，继续卖出平仓"
-            print "卖出平仓", i - 1
-            profit_loss_this_close = i - 1 - position_list[-1]
+        #如果上一次是买入，当前价格比上一次买入价格低出步长，继续买
+        if operation_stack[-1][2] == "B" and operation_stack[-1][1] - i >= touch_bottom_step and len(position_list) > 0:
+            operation_stack.append((x_c, i + 1, "B"))
+            print "上一次是买入，当前价格比上一次买入价格低出摸底步长，继续买入平仓"
+            print "买入平仓", i + 1
+            profit_loss_this_close = position_list[-1] - (i + 1)
             position_list.remove(position_list[-1])
             print "持仓详情", position_list
             profit_loss["profit_loss_close"] = profit_loss["profit_loss_close"] + profit_loss_this_close
@@ -137,7 +137,7 @@ def test_strategy():
         #time.sleep(1)
     print "持仓数据", position_list, "收盘价", market_data[-1]
     save_close_price(market_data[-1])
-    position_close_profit = sum([(market_data[-1] - i) for i in position_list])
+    position_close_profit = sum([(i - market_data[-1]) for i in position_list])
     print "收盘持仓结算盈亏", position_close_profit
     profit_loss["profit_loss_position"] = position_close_profit
     profit_loss["profit_loss"] = profit_loss["profit_loss_position"] + profit_loss['profit_loss_close']
