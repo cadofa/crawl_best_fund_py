@@ -15,87 +15,27 @@ def save_close_price(close):
 
 TEST_COUNT = 2
 
-worm_config = [
-        {
-            "worm_list": [],
-            "worm_length": 900,
-            "worm_mean_list":[],
-            #蠕虫均值观察周期
-            "obser_period": 180,
-            #开仓点位方向
-            "position": [],
-            #平仓收益
-            "close_gain": 0,
-            "oper_count": 0
-        },
-    ]
+tick_data_list = []
+dev_value_list = []
 
 def onTick(tick):
-    global worm_config
+    global tick_data_list, dev_value_list
     #print
     #print "行情数据-------------------*----------------------",  tick
-    for w in worm_config:
-        w["worm_list"].append(tick)
-        if len(w["worm_list"]) > w["worm_length"]:
-            w["worm_list"].pop(0)
-
-        if len(w["worm_mean_list"]) > w["obser_period"] - 1:
-            w["worm_mean_list"].pop(0)
-
-        if len(w["worm_list"]) < w["worm_length"]:
-            #print "蠕虫长度", len(w["worm_list"])
-            continue
-        else:
-            worm_max = max(w["worm_list"])
-            worm_min = min(w["worm_list"])
-            worm_mean = np.mean(w["worm_list"])
-            w["worm_mean_list"].append(worm_mean)
-            #print "蠕虫",  len(w["worm_list"])
-            #print "蠕虫均值", len(w["worm_mean_list"])
-            if len(w["worm_mean_list"]) >= w["obser_period"]:
-                if w["worm_mean_list"][-1] > w["worm_mean_list"][0]:
-                    #print "多头↑↑↑↑涨涨涨涨趋势"
-                    if not w["position"]:
-                        #print "多头建仓", tick
-                        w["position"].append((tick, "B"))
-                    if w["position"][0][-1] == "S":
-                        print "空单开仓点位", w["position"][0][0]
-                        print "空单平仓点位", tick
-                        print "空单平仓收益", w["position"][0][0] - tick
-                        print
-                        w["close_gain"] += (w["position"][0][0] - tick)
-                        w["oper_count"] += 1
-                        w["position"].remove(w["position"][-1])
-                        continue
-                if w["worm_mean_list"][-1] < w["worm_mean_list"][0]:
-                    #print "空头↓↓↓↓跌跌跌跌趋势"
-                    if not w["position"]:
-                        #print "空头建仓", tick
-                        w["position"].append((tick, "S"))
-                        continue
-                    if w["position"][0][-1] == "B":
-                        print "多单开仓点位", w["position"][0][0]
-                        print "多单平仓点位", tick
-                        print "多单平仓收益", tick - w["position"][0][0]
-                        print
-                        w["close_gain"] += (tick - w["position"][0][0])
-                        w["oper_count"] += 1
-                        w["position"].remove(w["position"][-1])
-                        continue
-
-    #time.sleep(2)
+    tick_data_list.append(tick)
+    #print tick_data_list
+    tick_mean = np.mean(tick_data_list)
+    dev_value_list.append((tick - tick_mean)/tick_mean*100)           
+    #time.sleep(1)
 
 def test_strategy():
-    global worm_config
     market_data = create_index_data()
-    position_list = []
-    operation_stack = []
-    x_c = 0
     for i in market_data:
         onTick(i)
+
+    print "均值", np.mean(tick_data_list)
+    print "最大最小偏离", max(dev_value_list), min(dev_value_list)
         
-    print worm_config[0]["close_gain"], worm_config[0]["oper_count"]
-    print
 
 for i in range(1, TEST_COUNT):
     fut_data = test_strategy()
@@ -113,7 +53,6 @@ for i in range(1, TEST_COUNT):
 #    plt.savefig(image_name)
 #    plt.close()
 #    
-#    position_list = []
 #    operation_stack = []
 #    profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 
