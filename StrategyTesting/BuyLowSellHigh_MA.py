@@ -9,15 +9,15 @@ from vtObject import KLineData, TickData
 class BuyLowSellHigh_MA(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "MA405"
+        self.vtSymbol = "MA2405"
         self.exchange = "CZCE"
         self.tick_data_list = []
         self.tick_mean = 0
         self.mean_deviation = 0
         #高卖间隔
-        self.high_sell_devs = [3,5,8,13,21,34,55,89]
+        self.high_sell_devs = [3, 5, 8, 13, 21, 34, 55, 89]
         #低买间隔
-        self.low_buy_devs = [-3,-5,-8,-13,-21,-34,-55,-89]
+        self.low_buy_devs = [-3, -5, -8, -13, -21, -34, -55, -89]
         self.buy_position_list = {}
         self.sell_position_list = {}
 
@@ -62,22 +62,27 @@ class BuyLowSellHigh_MA(CtaTemplate):
         self.tick_data_list.append(tick.lastPrice)
         self.tick_mean = np.mean(self.tick_data_list)
         self.mean_deviation = int((tick.lastPrice - self.tick_mean)/self.tick_mean*1000)
+
         #开仓多单
         if self.mean_deviation in self.low_buy_devs:
             if self.mean_deviation not in self.buy_position_list.keys():
-                self.buy_position_list.update({self.mean_deviation: tick.lastPrice + 1})
                 self.buy_open_position(tick.lastPrice + 1)
+                self.buy_position_list.update({self.mean_deviation: tick.lastPrice + 1})
+
         #开仓空单
         if self.mean_deviation in self.high_sell_devs:
             if self.mean_deviation not in self.sell_position_list.keys():
+                self.sell_open_position(tick.lastPrice - 1)
                 self.sell_position_list.update({self.mean_deviation: tick.lastPrice - 1})
+
 
         if self.mean_deviation == 0:
             if self.buy_position_list:
                 #平仓多单
                 for k,v in self.buy_position_list.items():
-                    self.sell_close_position(tick.lastPrice - 1)    
+                    self.sell_close_position(tick.lastPrice - 1)
                 self.buy_position_list.clear()
+
 
             if self.sell_position_list:
                 #平仓空单
@@ -88,7 +93,14 @@ class BuyLowSellHigh_MA(CtaTemplate):
 
     def onTrade(self, trade, log=True):
         """成交回调"""
+
+        self.output("当前偏差", self.mean_deviation)
+        self.output("当前操作", trade.direction, trade.offset)
+        self.output("多单B持仓", self.buy_position_list)
+        self.output("空单S持仓", self.sell_position_list)
+
         super().onTrade(trade, log)
+        self.output("--------" * 8)
 
     def onStart(self):
         self.output("onStart")
