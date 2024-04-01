@@ -26,7 +26,7 @@ def generate_random_number(start, m_data, step, swing):
     return m_data + random.choice(choice_list)
 
 def create_index_data():
-    swing = random.choice([0.003, 0.004, 0.005, 0.005, 0.008, 0.008, 0.013, 0.013, 0.021, 0.034, 0.055])
+    swing = random.choice([0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.011, 0.01, 0.012, 0.015, 0.018, 0.025])
     random_number_list = []
     start = get_close_price() + random.choice([0, -3,-5,-8,-13,3,5,8,13])
     m_data = start

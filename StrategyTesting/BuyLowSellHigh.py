@@ -13,7 +13,7 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-TEST_COUNT = 11
+TEST_COUNT = 51
 
 
 tick_data_list = []
@@ -88,6 +88,7 @@ for i in range(1, TEST_COUNT):
     fut_data = test_strategy()
 
     print "收盘", tick_data_list[-1]
+    save_close_price(tick_data_list[-1])
     print "均价", tick_mean
     print "空单持仓", sell_position_list
     for k,v in sell_position_list.items():
