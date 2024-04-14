@@ -9,7 +9,7 @@ from vtObject import KLineData, TickData
 class BuyLowSellHigh_MA(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "MA2405"
+        self.vtSymbol = "MA2409"
         self.exchange = "CZCE"
         self.tick_data_list = []
         self.tick_mean = 0

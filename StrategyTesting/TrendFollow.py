@@ -13,19 +13,19 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-TEST_COUNT = 11
+TEST_COUNT = 1001
 position_list = {}
-stop_loss_value = 2
+stop_loss_value = 3
 stop_profit_value = 8
 profit_and_loss = 0
 operation_num = 0
 
 def onTick(tick):
     global position_list, stop_loss_value, stop_profit_value, profit_and_loss, operation_num
-    print 
-    print "行情数据-------------------*----------------------",  tick
-    print "持仓数据", position_list
-    print "平仓盈亏", profit_and_loss
+    #print 
+    #print "行情数据-------------------*----------------------",  tick
+    #print "持仓数据", position_list
+    #print "平仓盈亏", profit_and_loss
     #没有持仓开始建仓
     if not position_list:
         position_list.update({"B": tick + 1})
@@ -37,12 +37,12 @@ def onTick(tick):
     if position_list:
         for k, v in position_list.items():
             if k == "B" and (tick - v) >= stop_profit_value:
-                print "多单止盈"
+                #print "多单止盈"
                 position_list.pop("B")
                 profit_and_loss += (tick - 1) - v
                 operation_num += 1
             if k == "S" and (v - tick) >= stop_profit_value:
-                print "空单止盈"
+                #print "空单止盈"
                 position_list.pop("S")
                 profit_and_loss += v - (tick + 1)
                 operation_num += 1
@@ -50,12 +50,12 @@ def onTick(tick):
     if len(position_list) == 1:
         for k, v in position_list.items():
             if k == "B" and (v - tick) <= stop_loss_value:
-                print "多单止损"
+                #print "多单止损"
                 position_list.pop("B")
                 profit_and_loss += (tick - 1) - v
                 operation_num += 1
             if k == "S" and (tick - v) <= stop_loss_value:
-                print "空单止损"
+                #print "空单止损"
                 position_list.pop("S")
                 profit_and_loss += v - (tick + 1)
                 operation_num += 1
