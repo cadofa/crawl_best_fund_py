@@ -13,9 +13,9 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-TEST_COUNT = 1001
+TEST_COUNT = 101
 position_list = {}
-stop_loss_value = 3
+stop_loss_value = 2
 stop_profit_value = 8
 profit_and_loss = 0
 operation_num = 0
