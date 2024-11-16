@@ -22,16 +22,17 @@ def save_close_price(close):
 SAMPLE_SIZE = 3600
 TEST_COUNT = 4 * 5 * 4 + 1
 
-copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
+copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
-touch_top_step = 8
+touch_top_step = 5
 
 profit_loss = {'profit_loss_position': 0, 'profit_loss_close': 0}
 profit_loss_sum = []
 
 
 def generate_random_number(start, m_data, step, swing):
-    choice_list = [0, step, (0 - step), step * 2, (0 - step)*2]
+    #choice_list = [0, step, (0 - step), step * 2, (0 - step)*2]
+    choice_list = [0, step, (0 - step)]
     if m_data < start * (1 - swing):
         return m_data + 1
     if m_data > start * (1 + swing):
@@ -43,7 +44,7 @@ def generate_random_number(start, m_data, step, swing):
     return m_data + random.choice(choice_list)
 
 def create_index_data():
-    swing = random.choice([0.003, 0.005, 0.005, 0.008, 0.008, 0.013, 0.021, 0.034, 0.055])
+    swing = random.choice([0.003, 0.005, 0.006, 0.008, 0.01, 0.013, 0.015, 0.018, 0.021, 0.034])
     random_number_list = []
     start = get_close_price() + random.choice([0, -3,-5,-8,-13,3,5,8,13])
     m_data = start
@@ -162,9 +163,9 @@ for i in range(1, TEST_COUNT):
             plt.annotate("B", [i[0], i[1]], color="red")
         if operation_stack[-1][2] == "S":
             plt.annotate("S", [i[0], i[1]], color="green")
-    plt.text(118, max(fut_data), str(profit_loss), fontsize=12)
-    plt.savefig(image_name)
-    plt.close()
+    #plt.text(118, max(fut_data), str(profit_loss), fontsize=12)
+    #plt.savefig(image_name)
+    #plt.close()
     
     position_list = []
     operation_stack = []
@@ -186,6 +187,6 @@ print "总体胜率", float(win_count)/len(profit_loss_sum)
 print "多次累计盈亏总和", sum(profit_loss_sum)
 
 total_profit = np.array(total_profit_loss_list)
-plt.plot(total_profit)
-plt.savefig("image/YieldCurve.png")
-plt.close()
+#plt.plot(total_profit)
+#plt.savefig("image/YieldCurve.png")
+#plt.close()
