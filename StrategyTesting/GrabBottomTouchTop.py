@@ -54,13 +54,7 @@ def create_index_data():
         m_data = generate_random_number(start, m_data, 1, swing)
         random_number_list.append(m_data)
 
-    step_list = []
-    for i in range(1, len(random_number_list)):
-        step_list.append(random_number_list[i] - random_number_list[i - 1])
 
-    index_list = []
-    for i in range(len(step_list)):
-        index_list.append((random_number_list[i], step_list[i]))
     print "最高价", max(random_number_list)
     print "最低价", min(random_number_list)
     return random_number_list
@@ -78,7 +72,7 @@ def test_strategy():
         print
         x_c += 1
         #初始化建仓
-        if not position_list and not operation_stack:
+        if not position_list:
             position_list.append(i + 1)
             print "初始化建仓"
             print "买入开仓", i+1
