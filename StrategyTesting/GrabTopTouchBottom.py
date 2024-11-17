@@ -20,7 +20,7 @@ def save_close_price(close):
         pickle.dump(close, file)
 
 SAMPLE_SIZE = 3600
-TEST_COUNT = 4 * 5 * 4 + 1
+TEST_COUNT = 4 * 5 + 1
 
 copy_top_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
@@ -130,11 +130,11 @@ def test_strategy():
             continue
 
         #time.sleep(1)
-    print "持仓数据", S_position_list, "收盘价", market_data[-1]
+    print "空单持仓数据", S_position_list, "收盘价", market_data[-1]
     save_close_price(market_data[-1])
-    position_close_profit = sum([(i - market_data[-1]) for i in S_position_list])
-    print "收盘持仓结算盈亏", position_close_profit
-    S_profit_loss["S_profit_loss_position"] = position_close_profit
+    S_position_close_profit = sum([(i - market_data[-1]) for i in S_position_list])
+    print "空单收盘持仓结算盈亏", S_position_close_profit
+    S_profit_loss["S_profit_loss_position"] = S_position_close_profit
     S_profit_loss["S_profit_loss"] = S_profit_loss["S_profit_loss_position"] + S_profit_loss['S_profit_loss_close']
     return market_data
         
@@ -143,8 +143,8 @@ for i in range(1, TEST_COUNT):
     image_name = "image/image%s.png" % i
     print "start", image_name
     fut_data = test_strategy()
-    print "累计盈亏", S_profit_loss
-    print "操作次数", len(S_operation_stack)
+    print "空单累计盈亏", S_profit_loss
+    print "空单操作次数", len(S_operation_stack)
     print
     S_profit_loss_sum.append(S_profit_loss["S_profit_loss"])
     #time.sleep(2)
@@ -161,24 +161,22 @@ for i in range(1, TEST_COUNT):
     #plt.savefig(image_name)
     #plt.close()
     
-    S_position_list = []
-    S_operation_stack = []
     S_profit_loss = {'S_profit_loss_position': 0, 'S_profit_loss_close': 0}
 
-print "历史盈亏列表", S_profit_loss_sum, len(S_profit_loss_sum)
+print "空单历史盈亏列表", S_profit_loss_sum, len(S_profit_loss_sum)
 total_S_profit_loss = 0
 total_S_profit_loss_list = []
 for i in S_profit_loss_sum:
     total_S_profit_loss += i
     total_S_profit_loss_list.append(total_S_profit_loss)
-print "累计盈亏列表", total_S_profit_loss_list
-print "最大亏损", min(S_profit_loss_sum)
-print "最大盈利", max(S_profit_loss_sum)
-print "亏损次数", len([i for i in S_profit_loss_sum if i < 0])
-win_count =  len([i for i in S_profit_loss_sum if i > 0])
-print "盈利次数", win_count
-print "总体胜率", float(win_count)/len(S_profit_loss_sum)
-print "多次累计盈亏总和", sum(S_profit_loss_sum)
+print "空单累计盈亏列表", total_S_profit_loss_list
+print "空单最大亏损", min(S_profit_loss_sum)
+print "空单最大盈利", max(S_profit_loss_sum)
+print "空单亏损次数", len([i for i in S_profit_loss_sum if i < 0])
+S_win_count =  len([i for i in S_profit_loss_sum if i > 0])
+print "空单盈利次数", S_win_count
+print "空单总体胜率", float(S_win_count)/len(S_profit_loss_sum)
+print "空单多次累计盈亏总和", sum(S_profit_loss_sum)
 
 total_profit = np.array(total_S_profit_loss_list)
 #plt.plot(total_profit)
