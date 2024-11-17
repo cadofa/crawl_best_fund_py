@@ -21,9 +21,9 @@ def save_close_price(close):
         pickle.dump(close, file)
 
 SAMPLE_SIZE = 3600
-TEST_COUNT = 4 + 1
+TEST_COUNT = 4*5 + 1
 
-B_S_DIFF = 5
+B_S_DIFF = 1
 
 step_interval = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
@@ -42,6 +42,14 @@ def save_B_position():
     with open('B_operation_stack.json', 'w') as o_file:
         json.dump(B_operation_stack, o_file)
 
+def save_S_position():
+    global S_position_list, S_operation_stack
+    with open('S_position.json', 'w') as file:
+        json.dump(S_position_list, file)
+
+    with open('S_operation_stack.json', 'w') as o_file:
+        json.dump(S_operation_stack, o_file)
+
 def read_B_position():
     try:
         with open('B_position.json', 'r') as file:
@@ -49,9 +57,23 @@ def read_B_position():
     except Exception, e:
         return []
 
+def read_S_position():
+    try:
+        with open('S_position.json', 'r') as file:
+            return json.load(file)
+    except Exception, e:
+        return []
+
 def read_B_operation():
     try:
         with open('B_operation_stack.json', 'r') as file:
+            return json.load(file)
+    except Exception, e:
+        return []
+
+def read_S_operation():
+    try:
+        with open('S_operation_stack.json', 'r') as file:
             return json.load(file)
     except Exception, e:
         return []
@@ -91,8 +113,8 @@ def test_strategy():
     market_data = create_index_data()
     B_Position_list = read_B_position()
     B_operation_stack = read_B_operation()
-    S_position_list = []
-    S_operation_stack = []
+    S_position_list = read_S_position()
+    S_operation_stack = read_S_operation()
     x_c = 0
     for i in market_data:
         print
@@ -219,6 +241,7 @@ def test_strategy():
     B_profit_loss["B_profit_loss"] = B_profit_loss["B_profit_loss_position"] + B_profit_loss['B_profit_loss_close']
     
     print "空单持仓数据", S_position_list, "收盘价", market_data[-1]
+    save_S_position()
     S_position_close_profit = sum([(i - market_data[-1]) for i in S_position_list])
     print "空单收盘持仓结算盈亏", S_position_close_profit
     S_profit_loss["S_profit_loss_position"] = S_position_close_profit
