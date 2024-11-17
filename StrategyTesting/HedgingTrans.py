@@ -2,6 +2,7 @@
 import random
 import time
 import pickle
+import json
 import matplotlib as mpl
 mpl.use('Agg')
 import numpy as np
@@ -19,10 +20,10 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-SAMPLE_SIZE = 3600 
+SAMPLE_SIZE = 3600
 TEST_COUNT = 4 + 1
 
-B_S_DIFF = 2
+B_S_DIFF = 5
 
 step_interval = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
@@ -33,6 +34,27 @@ B_profit_loss_sum = []
 S_profit_loss = {'S_profit_loss_position': 0, 'S_profit_loss_close': 0}
 S_profit_loss_sum = []
 
+def save_B_position():
+    global B_Position_list, B_operation_stack
+    with open('B_position.json', 'w') as file:
+        json.dump(B_Position_list, file)
+
+    with open('B_operation_stack.json', 'w') as o_file:
+        json.dump(B_operation_stack, o_file)
+
+def read_B_position():
+    try:
+        with open('B_position.json', 'r') as file:
+            return json.load(file)
+    except Exception, e:
+        return []
+
+def read_B_operation():
+    try:
+        with open('B_operation_stack.json', 'r') as file:
+            return json.load(file)
+    except Exception, e:
+        return []
 
 def generate_random_number(start, m_data, step, swing):
     #choice_list = [0, step, (0 - step), step * 2, (0 - step)*2]
@@ -67,8 +89,8 @@ def test_strategy():
     global B_operation_stack, B_Position_list, step_interval, B_profit_loss, touch_step
     global S_operation_stack, S_position_list, S_profit_loss
     market_data = create_index_data()
-    B_Position_list = []
-    B_operation_stack = []
+    B_Position_list = read_B_position()
+    B_operation_stack = read_B_operation()
     S_position_list = []
     S_operation_stack = []
     x_c = 0
@@ -190,6 +212,7 @@ def test_strategy():
         #time.sleep(1)
     print "多单持仓数据", B_Position_list, "收盘价", market_data[-1]
     save_close_price(market_data[-1])
+    save_B_position()
     B_position_close_profit = sum([(market_data[-1] - i) for i in B_Position_list])
     print "多单收盘持仓结算盈亏", B_position_close_profit
     B_profit_loss["B_profit_loss_position"] = B_position_close_profit
