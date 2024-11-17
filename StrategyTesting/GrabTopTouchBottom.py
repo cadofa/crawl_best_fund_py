@@ -93,9 +93,9 @@ def test_strategy():
 
             continue
         
-        last_index = S_position_list.index(S_position_list[-1])
+        S_last_index = S_position_list.index(S_position_list[-1])
         #根据卖出步长逐步卖出
-        if (i - S_position_list[-1]) >= copy_top_step[last_index]:
+        if (i - S_position_list[-1]) >= copy_top_step[S_last_index]:
             S_position_list.append(i - 1)
             print "当前点位比最后持仓点位高出指定间隔步长继续卖出开仓"
             print "卖出开仓", i - 1
