@@ -20,8 +20,8 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-SAMPLE_SIZE = 3600
-TEST_COUNT = 4 * 5 * 4 + 1
+SAMPLE_SIZE = 3600 * 4
+TEST_COUNT = 2
 
 B_S_DIFF = 1
 
@@ -289,6 +289,10 @@ total_B_profit_loss_list = []
 for i in B_profit_loss_sum:
     total_B_profit_loss += i
     total_B_profit_loss_list.append(total_B_profit_loss)
+f_close = get_close_price()
+print "收盘价", get_close_price()
+print
+print "多单最后持仓", B_Position_list
 print "多单累计盈亏列表", total_B_profit_loss_list
 print "多单最大亏损", min(B_profit_loss_sum)
 print "多单最大盈利", max(B_profit_loss_sum)
@@ -296,7 +300,8 @@ print "多单亏损次数", len([i for i in B_profit_loss_sum if i < 0])
 B_win_count =  len([i for i in B_profit_loss_sum if i > 0])
 print "多单盈利次数", B_win_count
 print "多单总体胜率", float(B_win_count)/len(B_profit_loss_sum)
-print "多单多次累计盈亏总和", sum(B_profit_loss_sum)
+print "多单持仓盈亏", sum([(f_close - i) for i in B_Position_list]) 
+print "多单多次平仓盈亏总和", sum(B_profit_loss_sum)
 print "\n\n"
 print "空单历史盈亏列表", S_profit_loss_sum, len(S_profit_loss_sum)
 total_S_profit_loss = 0
@@ -304,6 +309,7 @@ total_S_profit_loss_list = []
 for i in S_profit_loss_sum:
     total_S_profit_loss += i
     total_S_profit_loss_list.append(total_S_profit_loss)
+print "空单最后持仓", S_position_list
 print "空单累计盈亏列表", total_S_profit_loss_list
 print "空单最大亏损", min(S_profit_loss_sum)
 print "空单最大盈利", max(S_profit_loss_sum)
@@ -311,7 +317,8 @@ print "空单亏损次数", len([i for i in S_profit_loss_sum if i < 0])
 S_win_count =  len([i for i in S_profit_loss_sum if i > 0])
 print "空单盈利次数", S_win_count
 print "空单总体胜率", float(S_win_count)/len(S_profit_loss_sum)
-print "空单多次累计盈亏总和", sum(S_profit_loss_sum)
+print "空单持仓盈亏", sum([(i - f_close) for i in S_position_list])
+print "空单多次平仓盈亏总和", sum(S_profit_loss_sum)
 
 total_profit = np.array(total_B_profit_loss_list)
 #plt.plot(total_profit)
