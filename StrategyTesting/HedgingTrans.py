@@ -21,7 +21,7 @@ def save_close_price(close):
         pickle.dump(close, file)
 
 SAMPLE_SIZE = 3600
-TEST_COUNT = 4*5 + 1
+TEST_COUNT = 4 * 5 * 4 + 1
 
 B_S_DIFF = 1
 
@@ -238,14 +238,16 @@ def test_strategy():
     B_position_close_profit = sum([(market_data[-1] - i) for i in B_Position_list])
     print "多单收盘持仓结算盈亏", B_position_close_profit
     B_profit_loss["B_profit_loss_position"] = B_position_close_profit
-    B_profit_loss["B_profit_loss"] = B_profit_loss["B_profit_loss_position"] + B_profit_loss['B_profit_loss_close']
+    #B_profit_loss["B_profit_loss"] = B_profit_loss["B_profit_loss_position"] + B_profit_loss['B_profit_loss_close']
+    B_profit_loss["B_profit_loss"] = B_profit_loss['B_profit_loss_close']
     
     print "空单持仓数据", S_position_list, "收盘价", market_data[-1]
     save_S_position()
     S_position_close_profit = sum([(i - market_data[-1]) for i in S_position_list])
     print "空单收盘持仓结算盈亏", S_position_close_profit
     S_profit_loss["S_profit_loss_position"] = S_position_close_profit
-    S_profit_loss["S_profit_loss"] = S_profit_loss["S_profit_loss_position"] + S_profit_loss['S_profit_loss_close']
+    #S_profit_loss["S_profit_loss"] = S_profit_loss["S_profit_loss_position"] + S_profit_loss['S_profit_loss_close']
+    S_profit_loss["S_profit_loss"] = S_profit_loss['S_profit_loss_close']
     
     return market_data
         
