@@ -20,8 +20,8 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-SAMPLE_SIZE = 3600 * 4
-TEST_COUNT = 2
+SAMPLE_SIZE = 3600
+TEST_COUNT = 5
 
 B_S_DIFF = 0
 
@@ -214,12 +214,12 @@ def test_strategy():
 for i in range(1, TEST_COUNT):
     fut_data = test_strategy()
     print "多单平仓盈亏列表", B_profit_close_list
-    print "多单平仓操作次数", len(B_operation_stack)
+    print "多单平仓累计盈亏", sum(B_profit_close_list)
     print
          
     
 
-    print "空单平仓累计盈亏", S_profit_close_list
-    print "空单平仓操作次数", len(S_operation_stack)
+    print "空单平仓盈亏列表", S_profit_close_list
+    print "空单平仓累计盈亏", sum(S_profit_close_list)
     print
 
