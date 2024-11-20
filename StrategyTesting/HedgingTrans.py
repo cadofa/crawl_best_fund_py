@@ -21,48 +21,18 @@ def save_close_price(close):
         pickle.dump(close, file)
 
 SAMPLE_SIZE = 3600 * 4
-TEST_COUNT = 2
+TEST_COUNT = 3
 
-B_S_DIFF = 1
+B_S_DIFF = 0
 
 step_interval = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
 touch_step = 6
 
-B_profit_loss = {'B_profit_loss_position': 0, 'B_profit_loss_close': 0}
+B_profit_loss = {'B_profit_loss_close': 0}
 B_profit_loss_sum = []
-S_profit_loss = {'S_profit_loss_position': 0, 'S_profit_loss_close': 0}
+S_profit_loss = {'S_profit_loss_close': 0}
 S_profit_loss_sum = []
-
-def save_B_position():
-    global B_Position_list, B_operation_stack
-    with open('B_position.json', 'w') as file:
-        json.dump(B_Position_list, file)
-
-    with open('B_operation_stack.json', 'w') as o_file:
-        json.dump(B_operation_stack, o_file)
-
-def save_S_position():
-    global S_position_list, S_operation_stack
-    with open('S_position.json', 'w') as file:
-        json.dump(S_position_list, file)
-
-    with open('S_operation_stack.json', 'w') as o_file:
-        json.dump(S_operation_stack, o_file)
-
-def read_B_position():
-    try:
-        with open('B_position.json', 'r') as file:
-            return json.load(file)
-    except Exception, e:
-        return []
-
-def read_S_position():
-    try:
-        with open('S_position.json', 'r') as file:
-            return json.load(file)
-    except Exception, e:
-        return []
 
 def read_B_operation():
     try:
@@ -111,10 +81,10 @@ def test_strategy():
     global B_operation_stack, B_Position_list, step_interval, B_profit_loss, touch_step
     global S_operation_stack, S_position_list, S_profit_loss
     market_data = create_index_data()
-    B_Position_list = read_B_position()
-    B_operation_stack = read_B_operation()
-    S_position_list = read_S_position()
-    S_operation_stack = read_S_operation()
+    B_Position_list = []
+    B_operation_stack = []
+    S_position_list = []
+    S_operation_stack = []
     x_c = 0
     for i in market_data:
         print
@@ -232,95 +202,22 @@ def test_strategy():
             print "空单平仓收益", S_profit_loss
 
         #time.sleep(1)
-    print "多单持仓数据", B_Position_list, "收盘价", market_data[-1]
     save_close_price(market_data[-1])
-    save_B_position()
-    B_position_close_profit = sum([(market_data[-1] - i) for i in B_Position_list])
-    print "多单收盘持仓结算盈亏", B_position_close_profit
-    B_profit_loss["B_profit_loss_position"] = B_position_close_profit
-    #B_profit_loss["B_profit_loss"] = B_profit_loss["B_profit_loss_position"] + B_profit_loss['B_profit_loss_close']
-    B_profit_loss["B_profit_loss"] = B_profit_loss['B_profit_loss_close']
-    
-    print "空单持仓数据", S_position_list, "收盘价", market_data[-1]
-    save_S_position()
-    S_position_close_profit = sum([(i - market_data[-1]) for i in S_position_list])
-    print "空单收盘持仓结算盈亏", S_position_close_profit
-    S_profit_loss["S_profit_loss_position"] = S_position_close_profit
-    #S_profit_loss["S_profit_loss"] = S_profit_loss["S_profit_loss_position"] + S_profit_loss['S_profit_loss_close']
-    S_profit_loss["S_profit_loss"] = S_profit_loss['S_profit_loss_close']
+    print "多单平仓收益", B_profit_loss
+    print "空单平仓收益", S_profit_loss
     
     return market_data
         
 
 for i in range(1, TEST_COUNT):
-    image_name = "image/image%s.png" % i
-    print "start", image_name
     fut_data = test_strategy()
-    print "多单累计盈亏", B_profit_loss
-    print "多单操作次数", len(B_operation_stack)
+    print "多单平仓累计盈亏", B_profit_loss
+    print "多单平仓操作次数", len(B_operation_stack)
     print
-    B_profit_loss_sum.append(B_profit_loss["B_profit_loss"])
-    #time.sleep(2)
          
-    ypoints = np.array(fut_data)
-    plt.plot(ypoints)
-    #print "操作记录", B_operation_stack
-    for i in B_operation_stack:
-        if B_operation_stack[-1][2] == "B":
-            plt.annotate("B", [i[0], i[1]], color="red")
-        if B_operation_stack[-1][2] == "S":
-            plt.annotate("S", [i[0], i[1]], color="green")
-    #plt.text(118, max(fut_data), str(B_profit_loss), fontsize=12)
-    #plt.savefig(image_name)
-    #plt.close()
     
-    B_profit_loss = {'B_profit_loss_position': 0, 'B_profit_loss_close': 0}
 
-    print "空单累计盈亏", S_profit_loss
-    print "空单操作次数", len(S_operation_stack)
+    print "空单平仓累计盈亏", S_profit_loss
+    print "空单平仓操作次数", len(S_operation_stack)
     print
-    S_profit_loss_sum.append(S_profit_loss["S_profit_loss"])
-    
-    S_profit_loss = {'S_profit_loss_position': 0, 'S_profit_loss_close': 0}
 
-print "多单历史盈亏列表", B_profit_loss_sum, len(B_profit_loss_sum)
-total_B_profit_loss = 0
-total_B_profit_loss_list = []
-for i in B_profit_loss_sum:
-    total_B_profit_loss += i
-    total_B_profit_loss_list.append(total_B_profit_loss)
-f_close = get_close_price()
-print "收盘价", get_close_price()
-print
-print "多单最后持仓", B_Position_list
-print "多单累计盈亏列表", total_B_profit_loss_list
-print "多单最大亏损", min(B_profit_loss_sum)
-print "多单最大盈利", max(B_profit_loss_sum)
-print "多单亏损次数", len([i for i in B_profit_loss_sum if i < 0])
-B_win_count =  len([i for i in B_profit_loss_sum if i > 0])
-print "多单盈利次数", B_win_count
-print "多单总体胜率", float(B_win_count)/len(B_profit_loss_sum)
-print "多单持仓盈亏", sum([(f_close - i) for i in B_Position_list]) 
-print "多单多次平仓盈亏总和", sum(B_profit_loss_sum)
-print "\n\n"
-print "空单历史盈亏列表", S_profit_loss_sum, len(S_profit_loss_sum)
-total_S_profit_loss = 0
-total_S_profit_loss_list = []
-for i in S_profit_loss_sum:
-    total_S_profit_loss += i
-    total_S_profit_loss_list.append(total_S_profit_loss)
-print "空单最后持仓", S_position_list
-print "空单累计盈亏列表", total_S_profit_loss_list
-print "空单最大亏损", min(S_profit_loss_sum)
-print "空单最大盈利", max(S_profit_loss_sum)
-print "空单亏损次数", len([i for i in S_profit_loss_sum if i < 0])
-S_win_count =  len([i for i in S_profit_loss_sum if i > 0])
-print "空单盈利次数", S_win_count
-print "空单总体胜率", float(S_win_count)/len(S_profit_loss_sum)
-print "空单持仓盈亏", sum([(i - f_close) for i in S_position_list])
-print "空单多次平仓盈亏总和", sum(S_profit_loss_sum)
-
-total_profit = np.array(total_B_profit_loss_list)
-#plt.plot(total_profit)
-#plt.savefig("image/YieldCurve.png")
-#plt.close()
