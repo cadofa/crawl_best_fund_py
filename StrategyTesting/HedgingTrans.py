@@ -20,10 +20,8 @@ def save_close_price(close):
     with open('close.pk', 'wb') as file:
         pickle.dump(close, file)
 
-SAMPLE_SIZE = 3600
-TEST_COUNT = 5
-
-B_S_DIFF = 0
+SAMPLE_SIZE = 3600 * 2
+TEST_COUNT = 21
 
 step_interval = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
@@ -94,7 +92,7 @@ def test_strategy():
         print
         x_c += 1
         #初始化建仓
-        if not B_Position_list and (len(B_Position_list) - len(S_position_list) <= B_S_DIFF):
+        if not B_Position_list and len(B_Position_list) <= len(S_position_list):
             B_Position_list.append(i + 1)
             print "多单初始化建仓"
             print "买入开仓", i+1
@@ -103,16 +101,16 @@ def test_strategy():
             B_operation_stack.append((x_c, i + 1, "B"))
 
         #初始化建仓
-        if not S_position_list and (len(S_position_list) - len(B_Position_list) <= B_S_DIFF):
+        if not S_position_list and len(S_position_list) <= len(B_Position_list):
             S_position_list.append(i - 1)
             print "空单初始化建仓"
-            print "卖出开仓", i+1
+            print "卖出开仓", i-1
             print "空单持仓详情", S_position_list
             print "多单持仓详情", B_Position_list
             S_operation_stack.append((x_c, i - 1, "S"))
 
         #有过操作，没有持仓
-        if B_operation_stack and not B_Position_list and (len(B_Position_list) - len(S_position_list) <= B_S_DIFF):
+        if B_operation_stack and not B_Position_list and len(B_Position_list) <= len(S_position_list):
             #如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
             if B_operation_stack[-1][2] == "S" and B_operation_stack[-1][1] - i >= touch_step:
                 B_Position_list.append(i + 1)
@@ -123,7 +121,7 @@ def test_strategy():
                 B_operation_stack.append((x_c, i + 1, "B"))
 
         #有过操作，没有持仓
-        if S_operation_stack and not S_position_list and (len(S_position_list) - len(B_Position_list) <= B_S_DIFF):
+        if S_operation_stack and not S_position_list and len(S_position_list) <= len(B_Position_list):
             #如果上一次是买入，当前价格比上一次买入价格高出步长，继续卖
             if S_operation_stack[-1][2] == "B" and i - S_operation_stack[-1][1] >= touch_step:
                 S_position_list.append(i - 1)
@@ -135,7 +133,7 @@ def test_strategy():
         
         B_last_index = B_Position_list.index(B_Position_list[-1])
         #根据买入步长逐步买进
-        if (B_Position_list[-1] - i) >= step_interval[B_last_index] and (len(B_Position_list) - len(S_position_list) <= B_S_DIFF):
+        if (B_Position_list[-1] - i) >= step_interval[B_last_index] and len(B_Position_list) <= len(S_position_list):
             B_Position_list.append(i + 1)
             print "当前点位比最后持仓点位低出指定间隔步长继续买入开仓"
             print "多单买入开仓", i+1
@@ -145,7 +143,7 @@ def test_strategy():
         
         S_last_index = S_position_list.index(S_position_list[-1])
         #根据卖出步长逐步卖出
-        if (i - S_position_list[-1]) >= step_interval[S_last_index] and (len(S_position_list) - len(B_Position_list) <= B_S_DIFF):
+        if (i - S_position_list[-1]) >= step_interval[S_last_index] and len(S_position_list) <= len(B_Position_list):
             S_position_list.append(i - 1)
             print "当前点位比最后持仓点位高出指定间隔步长继续卖出开仓"
             print "空单卖出开仓", i - 1
