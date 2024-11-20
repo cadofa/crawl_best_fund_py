@@ -21,7 +21,7 @@ def save_close_price(close):
         pickle.dump(close, file)
 
 SAMPLE_SIZE = 3600 * 4
-TEST_COUNT = 3
+TEST_COUNT = 2
 
 B_S_DIFF = 0
 
@@ -29,10 +29,8 @@ step_interval = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
 
 touch_step = 6
 
-B_profit_loss = {'B_profit_loss_close': 0}
-B_profit_loss_sum = []
-S_profit_loss = {'S_profit_loss_close': 0}
-S_profit_loss_sum = []
+B_profit_close_list = []
+S_profit_close_list = []
 
 def read_B_operation():
     try:
@@ -78,9 +76,11 @@ def create_index_data():
     return random_number_list
 
 def test_strategy():
-    global B_operation_stack, B_Position_list, step_interval, B_profit_loss, touch_step
-    global S_operation_stack, S_position_list, S_profit_loss
+    global B_operation_stack, B_profit_close_list, step_interval, touch_step
+    global S_operation_stack, S_profit_close_list
     market_data = create_index_data()
+    B_profit_loss = {'B_profit_loss_close': 0}
+    S_profit_loss = {'S_profit_loss_close': 0}
     B_Position_list = []
     B_operation_stack = []
     S_position_list = []
@@ -204,20 +204,22 @@ def test_strategy():
         #time.sleep(1)
     save_close_price(market_data[-1])
     print "多单平仓收益", B_profit_loss
+    B_profit_close_list.append(B_profit_loss["B_profit_loss_close"])   
     print "空单平仓收益", S_profit_loss
+    S_profit_close_list.append(S_profit_loss["S_profit_loss_close"])
     
     return market_data
         
 
 for i in range(1, TEST_COUNT):
     fut_data = test_strategy()
-    print "多单平仓累计盈亏", B_profit_loss
+    print "多单平仓盈亏列表", B_profit_close_list
     print "多单平仓操作次数", len(B_operation_stack)
     print
          
     
 
-    print "空单平仓累计盈亏", S_profit_loss
+    print "空单平仓累计盈亏", S_profit_close_list
     print "空单平仓操作次数", len(S_operation_stack)
     print
 
