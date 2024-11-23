@@ -96,7 +96,7 @@ class HedgingTrans_M(CtaTemplate):
                     self.output("对冲策略中最后持仓点位比当前点位高出指定间隔步长继续买入开仓")
 
         # 如果比上一次买入高指定步长，卖出
-        if self.B_long_pos_list:
+        if self.B_long_pos_list and (B_pos_num >= S_pos_num):
             if (tick.lastPrice - self.B_long_pos_list[-1]) >= self.touch_step and self.B_long_pos_list:
                 if self.tran_auth:
                     self.tran_auth = False
@@ -105,7 +105,7 @@ class HedgingTrans_M(CtaTemplate):
                     self.output("对冲策略中当前价格比上一次买入高摸顶步长，卖出平仓")
         
         # 如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
-        if self.B_long_pos_list:
+        if self.B_long_pos_list and (B_pos_num >= S_pos_num):
             if (self.B_long_op_stack[-1][1] == "S" and
                     tick.lastPrice - self.B_long_op_stack[-1][0] >= self.touch_step and self.B_long_pos_list):
                 if self.tran_auth:
@@ -150,7 +150,7 @@ class HedgingTrans_M(CtaTemplate):
                     self.output("对冲策略中当前点位比最后持仓点位高出指定间隔步长继续卖出开仓")
 
         # 如果比上一次卖出低指定步长，买入平仓
-        if self.S_short_pos_list:
+        if self.S_short_pos_list and (S_pos_num >= B_pos_num):
             if (self.S_short_pos_list[-1] - tick.lastPrice) >= self.touch_step and self.S_short_pos_list:
                 if self.tran_auth:
                     self.tran_auth = False
@@ -159,7 +159,7 @@ class HedgingTrans_M(CtaTemplate):
                     self.output("对冲策略中当前价格比上一次卖出低摸底步长，买入平仓")
 
         # 如果上一次是买入，当前价格比上一次买入价格低出步长，继续买入平仓
-        if self.S_short_pos_list:
+        if self.S_short_pos_list and (S_pos_num >= B_pos_num):
             if (self.S_short_op_stack[-1][1] == "B" and
                     self.S_short_op_stack[-1][0] - tick.lastPrice >= self.touch_step and self.S_short_pos_list):
                 if self.tran_auth:
