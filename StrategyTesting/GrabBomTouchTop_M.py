@@ -5,13 +5,13 @@ from typing import Dict, List
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
-class GrabBomTouchTop_MA(CtaTemplate):
+class GrabBomTouchTop_M(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "MA405"
-        self.exchange = "CZCE"
-        self.touch_top_step = 8
-        self.copy_bottom_step = [5,8,13,21,34,55,89,55,34,21,13,8,5]
+        self.vtSymbol = "m2505"
+        self.exchange = "DCE"
+        self.touch_top_step = 6
+        self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
@@ -38,8 +38,18 @@ class GrabBomTouchTop_MA(CtaTemplate):
         """收到行情 tick 推送"""
         super().onTick(tick)
 
+        #多单持仓量为0，开始建仓多单
+        if self.get_position(self.vtSymbol).long.position == 0:
+            if self.tran_auth:
+                self.tran_auth = False
+                self.position_list.append(tick.lastPrice + 1)
+                self.operation_stack.append((tick.lastPrice + 1, "B"))
+                self.buy_open_position(tick.lastPrice + 1)
+                self.output("多单持仓量为0，开始建仓多单")
+
         # 初始化建仓
-        if not self.position_list and not self.operation_stack:
+        # if not self.position_list and not self.operation_stack:
+        if not self.position_list:
             if self.tran_auth:
                 self.tran_auth = False
                 self.position_list.append(tick.lastPrice + 1)
