@@ -5,11 +5,11 @@ from typing import Dict, List
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
-class GrabBomTouchTop_M(CtaTemplate):
+class GrabBomTouchTop_RM(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "m2505"
-        self.exchange = "DCE"
+        self.vtSymbol = "RM501"
+        self.exchange = "CZCE"
         self.touch_top_step = 6
         self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
         self.position_list = []
@@ -90,7 +90,7 @@ class GrabBomTouchTop_M(CtaTemplate):
                     self.operation_stack.append((tick.lastPrice - 1, "S"))
                     self.sell_close_position(tick.lastPrice - 1)
                     self.output("当前价格比上一次买入高摸顶步长，卖出平仓")
-
+        
         # 如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
         if self.position_list:
             if (self.operation_stack[-1][1] == "S" and

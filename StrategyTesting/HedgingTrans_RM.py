@@ -5,11 +5,11 @@ from typing import Dict, List
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
-class HedgingTrans_M(CtaTemplate):
+class HedgingTrans_RM(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "m2505"
-        self.exchange = "DCE"
+        self.vtSymbol = "RM501"
+        self.exchange = "CZCE"
         self.touch_step = 6
         self.copy_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
         self.B_long_pos_list = []

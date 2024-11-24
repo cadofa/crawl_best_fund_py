@@ -5,18 +5,19 @@ from typing import Dict, List
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
-class HedgingTrans_M(CtaTemplate):
+class HedgingTrans_TA(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "m2505"
-        self.exchange = "DCE"
-        self.touch_step = 6
-        self.copy_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
+        self.vtSymbol = "TA501"
+        self.exchange = "CZCE"
+        self.touch_step = 12
+        self.copy_step = [10,12,16,20,26,30,36,42,68,110,68,42,36,30,26,20]
         self.B_long_pos_list = []
         self.B_long_op_stack = []
         self.S_short_pos_list = []
         self.S_short_op_stack = []
         self.tran_auth = True
+        self.one_hop = 2
 
 
     def buy_open_position(self, price):
@@ -66,9 +67,9 @@ class HedgingTrans_M(CtaTemplate):
                 self.tran_auth = False
                 self.B_long_pos_list = []
                 self.B_long_op_stack = []
-                self.B_long_pos_list.append(tick.lastPrice + 1)
-                self.B_long_op_stack.append((tick.lastPrice + 1, "B"))
-                self.buy_open_position(tick.lastPrice + 1)
+                self.B_long_pos_list.append(tick.lastPrice + self.one_hop)
+                self.B_long_op_stack.append((tick.lastPrice + self.one_hop, "B"))
+                self.buy_open_position(tick.lastPrice + self.one_hop)
                 self.output("对冲策略多单持仓量为0，开始建仓多单")
 
         # 空单持仓量为0，开始建仓空单
@@ -77,9 +78,9 @@ class HedgingTrans_M(CtaTemplate):
                 self.tran_auth = False
                 self.S_short_pos_list = []
                 self.S_short_op_stack = []
-                self.S_short_pos_list.append(tick.lastPrice - 1)
-                self.S_short_op_stack.append((tick.lastPrice - 1, "S"))
-                self.sell_open_position(tick.lastPrice - 1)
+                self.S_short_pos_list.append(tick.lastPrice - self.one_hop)
+                self.S_short_op_stack.append((tick.lastPrice - self.one_hop, "S"))
+                self.sell_open_position(tick.lastPrice - self.one_hop)
                 self.output("对冲策略空单持仓量为0，开始建仓空单")
 
         # 初始化建仓
@@ -87,9 +88,9 @@ class HedgingTrans_M(CtaTemplate):
         if not self.B_long_pos_list and (B_pos_num < S_pos_num):
             if self.tran_auth:
                 self.tran_auth = False
-                self.B_long_pos_list.append(tick.lastPrice + 1)
-                self.B_long_op_stack.append((tick.lastPrice + 1, "B"))
-                self.buy_open_position(tick.lastPrice + 1)
+                self.B_long_pos_list.append(tick.lastPrice + self.one_hop)
+                self.B_long_op_stack.append((tick.lastPrice + self.one_hop, "B"))
+                self.buy_open_position(tick.lastPrice + self.one_hop)
                 self.output("对冲策略中多单数量 %d, 空单数量 %d, 多单建仓" % (B_pos_num, S_pos_num))
 
         # 有过操作，没有持仓
@@ -99,9 +100,9 @@ class HedgingTrans_M(CtaTemplate):
                     self.B_long_op_stack[-1][0] - tick.lastPrice >= self.touch_step):
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.B_long_pos_list.append(tick.lastPrice + 1)
-                    self.B_long_op_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_open_position(tick.lastPrice + 1)
+                    self.B_long_pos_list.append(tick.lastPrice + self.one_hop)
+                    self.B_long_op_stack.append((tick.lastPrice + self.one_hop, "B"))
+                    self.buy_open_position(tick.lastPrice + self.one_hop)
                     self.output("对冲策略中多单数量 %d, 空单数量 %d, 多单建仓" % (B_pos_num, S_pos_num))
                     self.output("对冲策略中上一次操作是卖出，当前价格比上一次卖出价格低出摸顶步长，继续买")
 
@@ -111,9 +112,9 @@ class HedgingTrans_M(CtaTemplate):
             if (self.B_long_pos_list[-1] - tick.lastPrice) >= self.copy_step[last_index]:
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.B_long_pos_list.append(tick.lastPrice + 1)
-                    self.B_long_op_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_open_position(tick.lastPrice + 1)
+                    self.B_long_pos_list.append(tick.lastPrice + self.one_hop)
+                    self.B_long_op_stack.append((tick.lastPrice + self.one_hop, "B"))
+                    self.buy_open_position(tick.lastPrice + self.one_hop)
                     self.output("对冲策略中多单数量 %d, 空单数量 %d, 多单建仓" % (B_pos_num, S_pos_num))
                     self.output("对冲策略中最后持仓点位比当前点位高出指定间隔步长继续买入开仓")
 
@@ -122,8 +123,8 @@ class HedgingTrans_M(CtaTemplate):
             if (tick.lastPrice - self.B_long_pos_list[-1]) >= self.touch_step and self.B_long_pos_list:
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.B_long_op_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_close_position(tick.lastPrice - 1)
+                    self.B_long_op_stack.append((tick.lastPrice - self.one_hop, "S"))
+                    self.sell_close_position(tick.lastPrice - self.one_hop)
                     self.output("对冲策略中当前价格比上一次买入高摸顶步长，卖出平仓")
         
         # 如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
@@ -132,8 +133,8 @@ class HedgingTrans_M(CtaTemplate):
                     tick.lastPrice - self.B_long_op_stack[-1][0] >= self.touch_step and self.B_long_pos_list):
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.B_long_op_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_close_position(tick.lastPrice - 1)
+                    self.B_long_op_stack.append((tick.lastPrice - self.one_hop, "S"))
+                    self.sell_close_position(tick.lastPrice - self.one_hop)
                     self.output("对冲策略中上一次是卖出，当前价格比上一次卖出价格高出摸顶步长，继续卖出平仓")
 
         # 初始化建仓
@@ -141,9 +142,9 @@ class HedgingTrans_M(CtaTemplate):
         if not self.S_short_pos_list and (S_pos_num < B_pos_num):
             if self.tran_auth:
                 self.tran_auth = False
-                self.S_short_pos_list.append(tick.lastPrice - 1)
-                self.S_short_op_stack.append((tick.lastPrice - 1, "S"))
-                self.sell_open_position(tick.lastPrice - 1)
+                self.S_short_pos_list.append(tick.lastPrice - self.one_hop)
+                self.S_short_op_stack.append((tick.lastPrice - self.one_hop, "S"))
+                self.sell_open_position(tick.lastPrice - self.one_hop)
                 self.output("对冲策略中多单数量 %d, 空单数量 %d, 空单建仓" % (B_pos_num, S_pos_num))
 
         # 有过操作，没有持仓
@@ -153,9 +154,9 @@ class HedgingTrans_M(CtaTemplate):
                     tick.lastPrice - self.S_short_op_stack[-1][0] >= self.touch_step):
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.S_short_pos_list.append(tick.lastPrice - 1)
-                    self.S_short_op_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_open_position(tick.lastPrice - 1)
+                    self.S_short_pos_list.append(tick.lastPrice - self.one_hop)
+                    self.S_short_op_stack.append((tick.lastPrice - self.one_hop, "S"))
+                    self.sell_open_position(tick.lastPrice - self.one_hop)
                     self.output("对冲策略中多单数量 %d, 空单数量 %d, 空单建仓" % (B_pos_num, S_pos_num))
                     self.output("对冲策略中上一次操作是买入平仓，当前价格比上一次买入价格高出摸底步长，继续卖出开仓")
 
@@ -165,9 +166,9 @@ class HedgingTrans_M(CtaTemplate):
             if (tick.lastPrice - self.S_short_pos_list[-1]) >= self.copy_step[last_index]:
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.S_short_pos_list.append(tick.lastPrice - 1)
-                    self.S_short_op_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_open_position(tick.lastPrice - 1)
+                    self.S_short_pos_list.append(tick.lastPrice - self.one_hop)
+                    self.S_short_op_stack.append((tick.lastPrice - self.one_hop, "S"))
+                    self.sell_open_position(tick.lastPrice - self.one_hop)
                     self.output("对冲策略中多单数量 %d, 空单数量 %d, 空单建仓" % (B_pos_num, S_pos_num))
                     self.output("对冲策略中当前点位比最后持仓点位高出指定间隔步长继续卖出开仓")
 
@@ -176,8 +177,8 @@ class HedgingTrans_M(CtaTemplate):
             if (self.S_short_pos_list[-1] - tick.lastPrice) >= self.touch_step and self.S_short_pos_list:
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.S_short_op_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_close_position(tick.lastPrice + 1)
+                    self.S_short_op_stack.append((tick.lastPrice + self.one_hop, "B"))
+                    self.buy_close_position(tick.lastPrice + self.one_hop)
                     self.output("对冲策略中当前价格比上一次卖出低摸底步长，买入平仓")
 
         # 如果上一次是买入，当前价格比上一次买入价格低出步长，继续买入平仓
@@ -186,8 +187,8 @@ class HedgingTrans_M(CtaTemplate):
                     self.S_short_op_stack[-1][0] - tick.lastPrice >= self.touch_step and self.S_short_pos_list):
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.S_short_op_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_close_position(tick.lastPrice + 1)
+                    self.S_short_op_stack.append((tick.lastPrice + self.one_hop, "B"))
+                    self.buy_close_position(tick.lastPrice + self.one_hop)
                     self.output("对冲策略中上一次是买入，当前价格比上一次买入价格低出摸底步长，继续买入平仓")
 
     def onTrade(self, trade, log=True):

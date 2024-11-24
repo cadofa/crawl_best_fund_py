@@ -5,17 +5,17 @@ from typing import Dict, List
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
-class GrabBomTouchTop_M(CtaTemplate):
+class GrabBomTouchTop_TA(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "m2505"
-        self.exchange = "DCE"
-        self.touch_top_step = 6
-        self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
+        self.vtSymbol = "TA501"
+        self.exchange = "CZCE"
+        self.touch_top_step = 12
+        self.copy_bottom_step = [10,12,16,20,26,30,36,42,68,110,68,42,36,30,26,20]
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
-
+        self.one_hop = 2
 
     def buy_open_position(self, price):
         self.orderID = self.buy(
@@ -38,15 +38,15 @@ class GrabBomTouchTop_M(CtaTemplate):
         """收到行情 tick 推送"""
         super().onTick(tick)
 
-        #多单持仓量为0，开始建仓多单
+        # 多单持仓量为0，开始建仓多单
         if self.get_position(self.vtSymbol).long.position == 0:
             if self.tran_auth:
                 self.tran_auth = False
                 self.position_list = []
                 self.operation_stack = []
-                self.position_list.append(tick.lastPrice + 1)
-                self.operation_stack.append((tick.lastPrice + 1, "B"))
-                self.buy_open_position(tick.lastPrice + 1)
+                self.position_list.append(tick.lastPrice + self.one_hop)
+                self.operation_stack.append((tick.lastPrice + self.one_hop, "B"))
+                self.buy_open_position(tick.lastPrice + self.one_hop)
                 self.output("多单持仓量为0，开始建仓多单")
 
         # 初始化建仓
@@ -54,9 +54,9 @@ class GrabBomTouchTop_M(CtaTemplate):
         if not self.position_list:
             if self.tran_auth:
                 self.tran_auth = False
-                self.position_list.append(tick.lastPrice + 1)
-                self.operation_stack.append((tick.lastPrice + 1, "B"))
-                self.buy_open_position(tick.lastPrice + 1)
+                self.position_list.append(tick.lastPrice + self.one_hop)
+                self.operation_stack.append((tick.lastPrice + self.one_hop, "B"))
+                self.buy_open_position(tick.lastPrice + self.one_hop)
                 self.output("程序启动建仓")
 
         # 有过操作，没有持仓
@@ -66,9 +66,9 @@ class GrabBomTouchTop_M(CtaTemplate):
                     self.operation_stack[-1][0] - tick.lastPrice >= self.touch_top_step):
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.position_list.append(tick.lastPrice + 1)
-                    self.operation_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_open_position(tick.lastPrice + 1)
+                    self.position_list.append(tick.lastPrice + self.one_hop)
+                    self.operation_stack.append((tick.lastPrice + self.one_hop, "B"))
+                    self.buy_open_position(tick.lastPrice + self.one_hop)
                     self.output("上一次操作是卖出，当前价格比上一次卖出价格低出摸顶步长，继续买")
 
         if self.position_list:
@@ -77,9 +77,9 @@ class GrabBomTouchTop_M(CtaTemplate):
             if (self.position_list[-1] - tick.lastPrice) >= self.copy_bottom_step[last_index]:
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.position_list.append(tick.lastPrice + 1)
-                    self.operation_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_open_position(tick.lastPrice + 1)
+                    self.position_list.append(tick.lastPrice + self.one_hop)
+                    self.operation_stack.append((tick.lastPrice + self.one_hop, "B"))
+                    self.buy_open_position(tick.lastPrice + self.one_hop)
                     self.output("最后持仓点位比当前点位高出指定间隔步长继续买入开仓")
 
         # 如果比上一次买入高指定步长，卖出
@@ -87,18 +87,18 @@ class GrabBomTouchTop_M(CtaTemplate):
             if (tick.lastPrice - self.position_list[-1]) >= self.touch_top_step and self.position_list:
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.operation_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_close_position(tick.lastPrice - 1)
+                    self.operation_stack.append((tick.lastPrice - self.one_hop, "S"))
+                    self.sell_close_position(tick.lastPrice - self.one_hop)
                     self.output("当前价格比上一次买入高摸顶步长，卖出平仓")
-
+        
         # 如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
         if self.position_list:
             if (self.operation_stack[-1][1] == "S" and
                     tick.lastPrice - self.operation_stack[-1][0] >= self.touch_top_step and self.position_list):
                 if self.tran_auth:
                     self.tran_auth = False
-                    self.operation_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_close_position(tick.lastPrice - 1)
+                    self.operation_stack.append((tick.lastPrice - self.one_hop, "S"))
+                    self.sell_close_position(tick.lastPrice - self.one_hop)
                     self.output("上一次是卖出，当前价格比上一次卖出价格高出摸顶步长，继续卖出平仓")
 
     def onTrade(self, trade, log=True):
