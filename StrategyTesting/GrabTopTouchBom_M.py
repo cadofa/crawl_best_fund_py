@@ -42,6 +42,8 @@ class GrabTopTouchBom_M(CtaTemplate):
         if self.get_position(self.vtSymbol).short.position == 0:
             if self.tran_auth:
                 self.tran_auth = False
+                self.position_list = []
+                self.operation_stack = []
                 self.position_list.append(tick.lastPrice - 1)
                 self.operation_stack.append((tick.lastPrice - 1, "S"))
                 self.sell_open_position(tick.lastPrice - 1)
