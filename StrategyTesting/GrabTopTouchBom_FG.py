@@ -1,21 +1,24 @@
 # encoding: UTF-8
 
+import os
+import json
+import time
+import threading
 from typing import Dict, List
 
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
 
-class GrabTopTouchBom_RM(CtaTemplate):
+class GrabTopTouchBom_FG(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "RM505"
+        self.vtSymbol = "FG509"
         self.exchange = "CZCE"
         self.touch_bom_step = 6
         self.copy_top_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
-
 
     def sell_open_position(self, price):
         self.orderID = self.short(
@@ -34,21 +37,30 @@ class GrabTopTouchBom_RM(CtaTemplate):
             order_direction="buy"
         )
 
+    def check_postition_list(self, tick):
+        self.position_num = self.get_position(self.vtSymbol).short.position
+
+        if len(self.position_list) > self.position_num:
+            self.position_list.pop()
+            self.output("持仓详情", self.position_list)
+
+        if len(self.position_list) < self.position_num:
+            self.position_list.append(tick.lastPrice)
+            self.output("持仓详情", self.position_list)
+
     def onTick(self, tick: TickData) -> None:
         """收到行情 tick 推送"""
         super().onTick(tick)
+        self.check_postition_list(tick)
 
         # 空单持仓量为0，开始建仓空单
         if self.get_position(self.vtSymbol).short.position <= 1:
             if self.tran_auth:
                 self.tran_auth = False
-                self.position_list = []
-                self.operation_stack = []
                 self.position_list.append(tick.lastPrice - 1)
                 self.operation_stack.append((tick.lastPrice - 1, "S"))
                 self.sell_open_position(tick.lastPrice - 1)
                 self.output("空单持仓量为0，开始建仓空单")
-
         # 初始化建仓
         # if not self.position_list and not self.operation_stack:
         if not self.position_list:
@@ -63,7 +75,7 @@ class GrabTopTouchBom_RM(CtaTemplate):
         if self.operation_stack and not self.position_list:
             # 如果上一次是买入，当前价格比上一次买入价格高出步长，继续卖
             if (self.operation_stack[-1][1] == "B" and
-                   tick.lastPrice - self.operation_stack[-1][0] >= self.touch_bom_step):
+                    tick.lastPrice - self.operation_stack[-1][0] >= self.touch_bom_step):
                 if self.tran_auth:
                     self.tran_auth = False
                     self.position_list.append(tick.lastPrice - 1)
@@ -90,7 +102,7 @@ class GrabTopTouchBom_RM(CtaTemplate):
                     self.operation_stack.append((tick.lastPrice + 1, "B"))
                     self.buy_close_position(tick.lastPrice + 1)
                     self.output("当前价格比上一次卖出低摸底步长，买入平仓")
-        
+
         # 如果上一次是买入，当前价格比上一次买入价格低出步长，继续买入平仓
         if self.position_list:
             if (self.operation_stack[-1][1] == "B" and
@@ -104,7 +116,10 @@ class GrabTopTouchBom_RM(CtaTemplate):
     def onTrade(self, trade, log=True):
         """成交回调"""
         if trade.direction == "空":
-            self.position_list[-1] = trade.price
+            if self.position_list:
+                self.position_list[-1] = trade.price
+            else:
+                self.position_list.append(trade.price)
             self.operation_stack.remove(self.operation_stack[-1])
             self.operation_stack.append((trade.price, "S"))
             self.output("卖出开仓", trade.price)
@@ -122,13 +137,39 @@ class GrabTopTouchBom_RM(CtaTemplate):
             self.tran_auth = True
 
         super().onTrade(trade, log)
+        self.save_list(self.position_list, self.__class__.__name__ + "_postion.json")
+        self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         self.output("--------" * 8)
 
+    def load_list(self, file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                raise ValueError("文件内容不是有效的列表")
+            return data
+        except FileNotFoundError as e:
+            self.output(f"读取失败：{str(e)}")
+            return []
+
+    def save_list(self, data, file_path, ensure_ascii=False):
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=ensure_ascii)
+        except Exception as e:
+            self.output(f"保存失败：{str(e)}")
+            raise
 
     def onStart(self):
-        self.output("onStart")
+        self.output("onStart 读取持仓列表，操作列表")
+        self.position_list = self.load_list(self.__class__.__name__ + "_postion.json")
+        self.output("启动持仓列表", self.position_list)
+        self.operation_stack = self.load_list(self.__class__.__name__ + "_oper_stack.json")
+        self.output("启动操作列表", self.operation_stack)
         super().onStart()
 
     def onStop(self):
-        self.output("onStop")
+        self.output("onStop 保存持仓列表，操作列表")
+        self.save_list(self.position_list, self.__class__.__name__ + "_postion.json")
+        self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         super().onStop()

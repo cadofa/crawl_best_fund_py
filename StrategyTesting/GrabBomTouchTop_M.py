@@ -1,5 +1,9 @@
 # encoding: UTF-8
 
+import os
+import json
+import time
+import threading
 from typing import Dict, List
 
 from ctaTemplate import CtaTemplate
@@ -8,7 +12,7 @@ from vtObject import KLineData, TickData
 class GrabBomTouchTop_M(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "m2505"
+        self.vtSymbol = "m2509"
         self.exchange = "DCE"
         self.touch_top_step = 6
         self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
@@ -34,16 +38,26 @@ class GrabBomTouchTop_M(CtaTemplate):
             order_direction="sell"
         )
 
+    def check_postition_list(self, tick):
+        self.position_num = self.get_position(self.vtSymbol).long.position
+
+        if len(self.position_list) > self.position_num:
+            self.position_list.pop()
+            self.output("持仓详情", self.position_list)
+
+        if len(self.position_list) < self.position_num:
+            self.position_list.append(tick.lastPrice)
+            self.output("持仓详情", self.position_list)
+
     def onTick(self, tick: TickData) -> None:
         """收到行情 tick 推送"""
         super().onTick(tick)
+        self.check_postition_list(tick)
 
         #多单持仓量为0，开始建仓多单
         if self.get_position(self.vtSymbol).long.position <= 1:
             if self.tran_auth:
                 self.tran_auth = False
-                self.position_list = []
-                self.operation_stack = []
                 self.position_list.append(tick.lastPrice + 1)
                 self.operation_stack.append((tick.lastPrice + 1, "B"))
                 self.buy_open_position(tick.lastPrice + 1)
@@ -104,7 +118,10 @@ class GrabBomTouchTop_M(CtaTemplate):
     def onTrade(self, trade, log=True):
         """成交回调"""
         if trade.direction == "多":
-            self.position_list[-1] = trade.price
+            if self.position_list:
+                self.position_list[-1] = trade.price
+            else:
+                self.position_list.append(trade.price)
             self.operation_stack.remove(self.operation_stack[-1])
             self.operation_stack.append((trade.price, "B"))
             self.output("买入开仓", trade.price)
@@ -122,13 +139,40 @@ class GrabBomTouchTop_M(CtaTemplate):
             self.tran_auth = True
 
         super().onTrade(trade, log)
+        self.save_list(self.position_list, self.__class__.__name__ + "_postion.json")
+        self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         self.output("--------" * 8)
 
+    def load_list(self, file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                raise ValueError("文件内容不是有效的列表")
+            return data
+        except FileNotFoundError as e:
+            self.output(f"读取失败：{str(e)}")
+            return []
+
+    def save_list(self, data, file_path, ensure_ascii=False):
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=ensure_ascii)
+        except Exception as e:
+            self.output(f"保存失败：{str(e)}")
+            raise
 
     def onStart(self):
-        self.output("onStart")
+        self.output("onStart 读取持仓列表，操作列表")
+        self.position_list = self.load_list(self.__class__.__name__ + "_postion.json")
+        self.output("启动持仓列表", self.position_list)
+        self.operation_stack = self.load_list(self.__class__.__name__ + "_oper_stack.json")
+        self.output("启动操作列表", self.operation_stack)
         super().onStart()
 
     def onStop(self):
-        self.output("onStop")
+        self.output("onStop 保存持仓列表，操作列表")
+        self.save_list(self.position_list, self.__class__.__name__ + "_postion.json")
+        self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         super().onStop()
+
