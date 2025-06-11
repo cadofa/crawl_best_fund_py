@@ -41,6 +41,9 @@ class GrabBomTouchTop_M(CtaTemplate):
     def check_postition_list(self, tick):
         self.position_num = self.get_position(self.vtSymbol).long.position
 
+        if self.position_num <= 1:
+            self.position_list = []
+
         if len(self.position_list) > self.position_num:
             self.position_list.pop()
             self.output("持仓详情", self.position_list)
@@ -106,7 +109,7 @@ class GrabBomTouchTop_M(CtaTemplate):
                     self.output("当前价格比上一次买入高摸顶步长，卖出平仓")
 
         # 如果上一次是卖出，当前价格比上一次卖出价格高出步长，继续卖
-        if self.position_list:
+        if self.position_list and self.operation_stack:
             if (self.operation_stack[-1][1] == "S" and
                     tick.lastPrice - self.operation_stack[-1][0] >= self.touch_top_step and self.position_list):
                 if self.tran_auth:
@@ -139,7 +142,7 @@ class GrabBomTouchTop_M(CtaTemplate):
             self.tran_auth = True
 
         super().onTrade(trade, log)
-        self.save_list(self.position_list, self.__class__.__name__ + "_postion.json")
+        self.save_list(self.position_list, self.__class__.__name__ + "_position.json")
         self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         self.output("--------" * 8)
 
@@ -164,7 +167,7 @@ class GrabBomTouchTop_M(CtaTemplate):
 
     def onStart(self):
         self.output("onStart 读取持仓列表，操作列表")
-        self.position_list = self.load_list(self.__class__.__name__ + "_postion.json")
+        self.position_list = self.load_list(self.__class__.__name__ + "_position.json")
         self.output("启动持仓列表", self.position_list)
         self.operation_stack = self.load_list(self.__class__.__name__ + "_oper_stack.json")
         self.output("启动操作列表", self.operation_stack)
@@ -172,7 +175,7 @@ class GrabBomTouchTop_M(CtaTemplate):
 
     def onStop(self):
         self.output("onStop 保存持仓列表，操作列表")
-        self.save_list(self.position_list, self.__class__.__name__ + "_postion.json")
+        self.save_list(self.position_list, self.__class__.__name__ + "_position.json")
         self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         super().onStop()
 
