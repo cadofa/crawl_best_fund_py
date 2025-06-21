@@ -19,7 +19,7 @@ class GrabBomTouchTop_M(CtaTemplate):
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
-
+        self.min_position = 5
 
     def buy_open_position(self, price):
         self.orderID = self.buy(
@@ -41,7 +41,7 @@ class GrabBomTouchTop_M(CtaTemplate):
     def check_postition_list(self, tick):
         self.position_num = self.get_position(self.vtSymbol).long.position
 
-        if self.position_num <= 1:
+        if self.position_num <= self.min_position:
             self.position_list = []
 
         if len(self.position_list) > self.position_num:
@@ -58,7 +58,7 @@ class GrabBomTouchTop_M(CtaTemplate):
         self.check_postition_list(tick)
 
         #多单持仓量为0，开始建仓多单
-        if self.get_position(self.vtSymbol).long.position <= 1:
+        if self.get_position(self.vtSymbol).long.position <= self.min_position:
             if self.tran_auth:
                 self.tran_auth = False
                 self.position_list.append(tick.lastPrice + 1)
@@ -178,4 +178,3 @@ class GrabBomTouchTop_M(CtaTemplate):
         self.save_list(self.position_list, self.__class__.__name__ + "_position.json")
         self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
         super().onStop()
-
