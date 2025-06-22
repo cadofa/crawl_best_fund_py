@@ -19,7 +19,7 @@ class GrabBomTouchTop_SA(CtaTemplate):
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
-        self.min_position = 5
+        self.min_long_position = 5
 
     def buy_open_position(self, price):
         self.orderID = self.buy(
@@ -41,16 +41,17 @@ class GrabBomTouchTop_SA(CtaTemplate):
     def check_postition_list(self, tick):
         self.position_num = self.get_position(self.vtSymbol).long.position
 
-        if self.position_num <= self.min_position:
-            self.position_list = []
+        if self.tran_auth:  
+            if self.position_num <= self.min_long_position:
+                self.position_list = []
 
-        if len(self.position_list) > self.position_num:
-            self.position_list.pop()
-            self.output("持仓详情", self.position_list)
+            if len(self.position_list) > self.position_num:
+                self.position_list.pop()
+                self.output("pop 持仓详情", self.position_list)
 
-        if len(self.position_list) < self.position_num:
-            self.position_list.append(tick.lastPrice)
-            self.output("持仓详情", self.position_list)
+            if len(self.position_list) < self.position_num:
+                self.position_list.append(tick.lastPrice)
+                self.output("append 持仓详情", self.position_list)
 
     def onTick(self, tick: TickData) -> None:
         """收到行情 tick 推送"""
@@ -58,7 +59,7 @@ class GrabBomTouchTop_SA(CtaTemplate):
         self.check_postition_list(tick)
 
         #多单持仓量为0，开始建仓多单
-        if self.get_position(self.vtSymbol).long.position <= self.min_position:
+        if self.get_position(self.vtSymbol).long.position <= self.min_long_position:
             if self.tran_auth:
                 self.tran_auth = False
                 self.position_list.append(tick.lastPrice + 1)
@@ -121,10 +122,7 @@ class GrabBomTouchTop_SA(CtaTemplate):
     def onTrade(self, trade, log=True):
         """成交回调"""
         if trade.direction == "多":
-            if self.position_list:
-                self.position_list[-1] = trade.price
-            else:
-                self.position_list.append(trade.price)
+            self.position_list[-1] = trade.price
             self.operation_stack.remove(self.operation_stack[-1])
             self.operation_stack.append((trade.price, "B"))
             self.output("买入开仓", trade.price)
