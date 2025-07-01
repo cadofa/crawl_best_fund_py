@@ -20,6 +20,7 @@ class GrabTopTouchBom_SA(CtaTemplate):
         self.operation_stack = []
         self.tran_auth = True
         self.min_short_position = 1
+        self.dynamic_step = len(self.position_list) * self.touch_bom_step
 
     def sell_open_position(self, price):
         self.orderID = self.short(
@@ -66,8 +67,8 @@ class GrabTopTouchBom_SA(CtaTemplate):
                 self.operation_stack.append((tick.lastPrice - 1, "S"))
                 self.sell_open_position(tick.lastPrice - 1)
                 self.output("空单持仓量为0，开始建仓空单")
+
         # 初始化建仓
-        # if not self.position_list and not self.operation_stack:
         if not self.position_list:
             if self.tran_auth:
                 self.tran_auth = False
@@ -76,21 +77,9 @@ class GrabTopTouchBom_SA(CtaTemplate):
                 self.sell_open_position(tick.lastPrice - 1)
                 self.output("程序启动建仓空单")
 
-        # 有过操作，没有持仓
-        if self.operation_stack and not self.position_list:
-            # 如果上一次是买入，当前价格比上一次买入价格高出步长，继续卖
-            if (self.operation_stack[-1][1] == "B" and
-                    tick.lastPrice - self.operation_stack[-1][0] >= self.touch_bom_step):
-                if self.tran_auth:
-                    self.tran_auth = False
-                    self.position_list.append(tick.lastPrice - 1)
-                    self.operation_stack.append((tick.lastPrice - 1, "S"))
-                    self.sell_open_position(tick.lastPrice - 1)
-                    self.output("上一次操作是买入平仓，当前价格比上一次买入价格高出摸底步长，继续卖出开仓")
-
         if self.position_list:
             last_index = self.position_list.index(self.position_list[-1])
-            # 根据卖出步长逐步卖出
+            # 根据卖出步长逐步卖出建仓
             if (tick.lastPrice - self.position_list[-1]) >= self.copy_top_step[last_index]:
                 if self.tran_auth:
                     self.tran_auth = False
@@ -101,7 +90,7 @@ class GrabTopTouchBom_SA(CtaTemplate):
 
         # 如果比上一次卖出低指定步长，买入平仓
         if self.position_list:
-            if (self.position_list[-1] - tick.lastPrice) >= self.touch_bom_step and self.position_list:
+            if (self.position_list[-1] - tick.lastPrice) >= self.dynamic_step and self.position_list:
                 if self.tran_auth:
                     self.tran_auth = False
                     self.operation_stack.append((tick.lastPrice + 1, "B"))

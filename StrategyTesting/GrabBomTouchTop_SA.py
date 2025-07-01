@@ -20,6 +20,7 @@ class GrabBomTouchTop_SA(CtaTemplate):
         self.operation_stack = []
         self.tran_auth = True
         self.min_long_position = 5
+        self.dynamic_step = len(self.position_list) * self.touch_top_step
 
     def buy_open_position(self, price):
         self.orderID = self.buy(
@@ -68,7 +69,6 @@ class GrabBomTouchTop_SA(CtaTemplate):
                 self.output("多单持仓量为0，开始建仓多单")
 
         # 初始化建仓
-        # if not self.position_list and not self.operation_stack:
         if not self.position_list:
             if self.tran_auth:
                 self.tran_auth = False
@@ -76,18 +76,6 @@ class GrabBomTouchTop_SA(CtaTemplate):
                 self.operation_stack.append((tick.lastPrice + 1, "B"))
                 self.buy_open_position(tick.lastPrice + 1)
                 self.output("程序启动建仓")
-
-        # 有过操作，没有持仓
-        if self.operation_stack and not self.position_list:
-            # 如果上一次是卖出，当前价格比上一次卖出价格低出步长，继续买
-            if (self.operation_stack[-1][1] == "S" and
-                    self.operation_stack[-1][0] - tick.lastPrice >= self.touch_top_step):
-                if self.tran_auth:
-                    self.tran_auth = False
-                    self.position_list.append(tick.lastPrice + 1)
-                    self.operation_stack.append((tick.lastPrice + 1, "B"))
-                    self.buy_open_position(tick.lastPrice + 1)
-                    self.output("上一次操作是卖出，当前价格比上一次卖出价格低出摸顶步长，继续买")
 
         if self.position_list:
             last_index = self.position_list.index(self.position_list[-1])
@@ -102,7 +90,7 @@ class GrabBomTouchTop_SA(CtaTemplate):
 
         # 如果比上一次买入高指定步长，卖出
         if self.position_list:
-            if (tick.lastPrice - self.position_list[-1]) >= self.touch_top_step and self.position_list:
+            if (tick.lastPrice - self.position_list[-1]) >= self.dynamic_step and self.position_list:
                 if self.tran_auth:
                     self.tran_auth = False
                     self.operation_stack.append((tick.lastPrice - 1, "S"))
