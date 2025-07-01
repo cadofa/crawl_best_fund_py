@@ -95,6 +95,7 @@ class GrabTopTouchBom_M(CtaTemplate):
                     self.tran_auth = False
                     self.operation_stack.append((tick.lastPrice + 1, "B"))
                     self.buy_close_position(tick.lastPrice + 1)
+                    self.output("当前动态步长", self.dynamic_step)
                     self.output("当前价格比上一次卖出低摸底步长，买入平仓")
         
         # 如果上一次是买入，当前价格比上一次买入价格低出步长，继续买入平仓
