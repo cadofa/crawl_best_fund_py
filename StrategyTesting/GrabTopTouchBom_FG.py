@@ -20,7 +20,6 @@ class GrabTopTouchBom_FG(CtaTemplate):
         self.operation_stack = []
         self.tran_auth = True
         self.min_short_position = 1
-        self.dynamic_step = len(self.position_list) * self.touch_bom_step
 
     def sell_open_position(self, price):
         self.orderID = self.short(
@@ -88,8 +87,9 @@ class GrabTopTouchBom_FG(CtaTemplate):
                     self.sell_open_position(tick.lastPrice - 1)
                     self.output("当前点位比最后持仓点位高出指定间隔步长继续卖出开仓")
 
-        # 如果比上一次卖出低指定步长，买入平仓
+        # 如果比上一次卖出低动态步长，买入平仓
         if self.position_list:
+            self.dynamic_step = len(self.position_list) * self.touch_bom_step
             if (self.position_list[-1] - tick.lastPrice) >= self.dynamic_step and self.position_list:
                 if self.tran_auth:
                     self.tran_auth = False
