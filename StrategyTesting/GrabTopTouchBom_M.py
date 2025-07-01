@@ -15,7 +15,7 @@ class GrabTopTouchBom_M(CtaTemplate):
         self.vtSymbol = "m2509"
         self.exchange = "DCE"
         self.touch_bom_step = 6
-        self.copy_top_step = [5,6,8,10,13,15,18,21,34,55,34,21,18,15,13,10]
+        self.copy_top_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
         self.position_list = []
         self.operation_stack = []
         self.tran_auth = True
