@@ -5,6 +5,7 @@ import json
 import time
 import threading
 from typing import Dict, List
+from collections import deque
 
 from ctaTemplate import CtaTemplate
 from vtObject import KLineData, TickData
@@ -20,6 +21,13 @@ class GrabTopTouchBom_SA(CtaTemplate):
         self.operation_stack = []
         self.tran_auth = True
         self.min_short_position = 1
+
+        #计算均线的周期，例如60就是60周期均线  
+        self.QUEUE_LENGTH = 68
+        #QUEUE_INTERVAL数字为分钟，1代码采集间隔为1分钟
+        self.QUEUE_INTERVAL = 1
+        self.QUEUE = deque(maxlen=self.QUEUE_LENGTH)
+        self.last_added_time = None
 
     def sell_open_position(self, price):
         self.orderID = self.short(
@@ -53,39 +61,53 @@ class GrabTopTouchBom_SA(CtaTemplate):
                 self.position_list.append(tick.lastPrice)
                 self.output("append 空单持仓详情", self.position_list)
 
+    def tick_averager(self, tick):
+        self.current_time = time.time()
+        if self.last_added_time is None or (self.current_time - self.last_added_time >= self.QUEUE_INTERVAL * 60):
+            self.QUEUE.append(tick.lastPrice)
+            self.last_added_time = self.current_time
+            #self.output("self.QUEUE", self.QUEUE)
+            #self.output("self.tick_averager", sum(self.QUEUE) / len(self.QUEUE))
+        return sum(self.QUEUE) / len(self.QUEUE)
+
     def onTick(self, tick: TickData) -> None:
         """收到行情 tick 推送"""
         super().onTick(tick)
         self.check_postition_list(tick)
 
-        # 空单持仓量为0，开始建仓空单
-        if self.get_position(self.vtSymbol).short.position <= self.min_short_position:
-            if self.tran_auth:
-                self.tran_auth = False
-                self.position_list.append(tick.lastPrice - 1)
-                self.operation_stack.append((tick.lastPrice - 1, "S"))
-                self.sell_open_position(tick.lastPrice - 1)
-                self.output("空单持仓量为0，开始建仓空单")
-
-        # 初始化建仓
-        if not self.position_list:
-            if self.tran_auth:
-                self.tran_auth = False
-                self.position_list.append(tick.lastPrice - 1)
-                self.operation_stack.append((tick.lastPrice - 1, "S"))
-                self.sell_open_position(tick.lastPrice - 1)
-                self.output("程序启动建仓空单")
-
-        if self.position_list:
-            last_index = self.position_list.index(self.position_list[-1])
-            # 根据卖出步长逐步卖出建仓
-            if (tick.lastPrice - self.position_list[-1]) >= self.copy_top_step[last_index]:
+        #确认当前空头趋势
+        if tick.lastPrice < self.tick_averager(tick):
+            # 空单持仓量为0，开始建仓空单
+            if self.get_position(self.vtSymbol).short.position <= self.min_short_position:
                 if self.tran_auth:
                     self.tran_auth = False
                     self.position_list.append(tick.lastPrice - 1)
                     self.operation_stack.append((tick.lastPrice - 1, "S"))
                     self.sell_open_position(tick.lastPrice - 1)
-                    self.output("当前点位比最后持仓点位高出指定间隔步长继续卖出开仓")
+                    self.output("self.tick_averager", sum(self.QUEUE) / len(self.QUEUE))
+                    self.output("空单持仓量为0，开始建仓空单")
+
+            # 初始化建仓
+            if not self.position_list:
+                if self.tran_auth:
+                    self.tran_auth = False
+                    self.position_list.append(tick.lastPrice - 1)
+                    self.operation_stack.append((tick.lastPrice - 1, "S"))
+                    self.sell_open_position(tick.lastPrice - 1)
+                    self.output("self.tick_averager", sum(self.QUEUE) / len(self.QUEUE))
+                    self.output("程序启动建仓空单")
+
+            if self.position_list:
+                last_index = self.position_list.index(self.position_list[-1])
+                # 根据卖出步长逐步卖出建仓
+                if (tick.lastPrice - self.position_list[-1]) >= self.copy_top_step[last_index]:
+                    if self.tran_auth:
+                        self.tran_auth = False
+                        self.position_list.append(tick.lastPrice - 1)
+                        self.operation_stack.append((tick.lastPrice - 1, "S"))
+                        self.sell_open_position(tick.lastPrice - 1)
+                        self.output("self.tick_averager", sum(self.QUEUE) / len(self.QUEUE))
+                        self.output("当前点位比最后持仓点位高出指定间隔步长继续卖出开仓")
 
         # 如果比上一次卖出低动态步长，买入平仓
         if self.position_list:
@@ -131,6 +153,7 @@ class GrabTopTouchBom_SA(CtaTemplate):
         super().onTrade(trade, log)
         self.save_list(self.position_list, self.__class__.__name__ + "_position.json")
         self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
+        self.save_list(list(self.QUEUE), self.__class__.__name__ + "_tick_averager.json")
         self.output("--------" * 8)
 
     def load_list(self, file_path):
@@ -158,10 +181,12 @@ class GrabTopTouchBom_SA(CtaTemplate):
         self.output("启动持仓列表", self.position_list)
         self.operation_stack = self.load_list(self.__class__.__name__ + "_oper_stack.json")
         self.output("启动操作列表", self.operation_stack)
+        self.QUEUE = deque(self.load_list(self.__class__.__name__ + "_tick_averager.json"), maxlen=self.QUEUE_LENGTH)
         super().onStart()
 
     def onStop(self):
         self.output("onStop 保存持仓列表，操作列表")
         self.save_list(self.position_list, self.__class__.__name__ + "_position.json")
         self.save_list(self.operation_stack[-8:], self.__class__.__name__ + "_oper_stack.json")
+        self.save_list(list(self.QUEUE), self.__class__.__name__ + "_tick_averager.json")
         super().onStop()
