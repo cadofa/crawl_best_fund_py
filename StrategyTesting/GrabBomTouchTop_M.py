@@ -23,7 +23,7 @@ class GrabBomTouchTop_M(CtaTemplate):
         self.min_long_position = 2
 
         #计算均线的周期，例如60就是60周期均线  
-        self.QUEUE_LENGTH = 68
+        self.QUEUE_LENGTH = 60
         #QUEUE_INTERVAL数字为分钟，1代码采集间隔为1分钟
         self.QUEUE_INTERVAL = 1
         self.QUEUE = deque(maxlen=self.QUEUE_LENGTH)
