@@ -13,7 +13,7 @@ from vtObject import KLineData, TickData
 class GrabBomTouchTop_M(CtaTemplate):
     def __init__(self):
         super().__init__()
-        self.vtSymbol = "m2509"
+        self.vtSymbol = "m2601"
         self.exchange = "DCE"
         self.touch_top_step = 6
         self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
