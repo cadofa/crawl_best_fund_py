@@ -8,18 +8,18 @@ api =  TqApi(account=TqSim(init_balance=100000),
              web_gui=True, 
              auth=TqAuth("cadofa", "cadofa6688"),
              debug=False)
-symbol = "DCE.m2601"  # 修改为你需要的合约
+#symbol = "DCE.m2601"  # 修改为你需要的合约
 #symbol = "CZCE.FG601"
-#symbol = "CZCE.SA601"
+symbol = "CZCE.SA601"
 
 # 获取行情数据
 quote = api.get_quote(symbol)
 klines = api.get_kline_serial(symbol, 60, data_length=100)
 long_position_list = []
 short_position_list = []
-copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+copy_bottom_step = [5,8,10,13,15,18,21,34,55,89,144,89,55,34,21,18,15,13,10]
 touch_top_step = 6
-copy_top_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+copy_top_step = [5,8,10,13,15,18,21,34,55,89,144,89,55,34,21,18,15,13,10]
 touch_bottom_step = 6
 
 def print_latest_price():
@@ -44,7 +44,7 @@ def open_long_position():
         if not math.isnan(order.trade_price):
             long_position_list.append(order.trade_price)
         position = api.get_position(symbol)
-        print(f"持仓: 多单{position.pos}手, 持仓列表{long_position_list}")
+        print(f"持仓: 多单{position.pos_long}手, 持仓列表{long_position_list}")
     else:
         print(f"❌ 订单异常: {order.status}")
     print_latest_price()
@@ -61,7 +61,7 @@ def close_long():
         print("✅ 多单平仓CLOSE成功")
         long_position_list.remove(long_position_list[-1])
         position = api.get_position(symbol)
-        print(f"持仓: 多单{position.pos}手, 持仓列表{long_position_list}")
+        print(f"持仓: 多单{position.pos_long}手, 持仓列表{long_position_list}")
     else:
         print(f"平仓失败，订单状态: {order.status}")
     print_latest_price()
@@ -81,7 +81,7 @@ def open_short_position():
         if not math.isnan(order.trade_price):
             short_position_list.append(order.trade_price)
         position = api.get_position(symbol)
-        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}")
+        print(f"持仓: 空单{position.pos_short}手, 持仓列表{short_position_list}")
     else:
         print(f"❌ 订单异常: {order.status}")
     print_latest_price()
@@ -98,7 +98,7 @@ def close_short():
         print("✅ 空单平仓CLOSE成功")
         short_position_list.remove(short_position_list[-1])
         position = api.get_position(symbol)
-        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}")
+        print(f"持仓: 空单{position.pos_short}手, 持仓列表{short_position_list}")
     else:
         print(f"平仓失败，订单状态: {order.status}")
     print_latest_price()
