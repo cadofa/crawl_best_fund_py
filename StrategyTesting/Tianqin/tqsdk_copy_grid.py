@@ -5,7 +5,7 @@ import time, math
 
 # 创建API连接
 api =  TqApi(account=TqSim(init_balance=100000),
-             backtest=TqBacktest(start_dt=date(2025, 1, 21), end_dt=date(2025, 11, 24)),
+             backtest=TqBacktest(start_dt=date(2025, 1, 18), end_dt=date(2025, 11, 24)),
              web_gui=True, 
              auth=TqAuth("cadofa", "cadofa6688"),
              debug=False)
@@ -37,9 +37,9 @@ def get_ma3(symbol, Tapi):
     包含最近3天3日移动平均线值的列表，从早到晚排列
     如果数据不足或计算失败返回None
     """
-    k3dlines = Tapi.get_kline_serial(symbol, 24 * 60 * 60, data_length=5)
+    k3dlines = Tapi.get_kline_serial(symbol, 24 * 60 * 60, data_length=8)
         
-    # 计算3日移动平均线
+    # 计算N日移动平均线
     ma = MA(k3dlines, 3)
         
     # 获取MA值列表
@@ -66,7 +66,7 @@ def open_long_position():
         #print(f"订单状态: {order.status}")
 
     # 检查最终状态
-    if order.status == "FINISHED":
+    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
         print("✅ 多单建仓OPEN成功!")
         if not math.isnan(order.trade_price):
             long_position_list.append(order.trade_price)
@@ -84,7 +84,7 @@ def close_long():
     while order.status == "ALIVE":
         api.wait_update()
     
-    if order.status == "FINISHED":
+    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
         print("✅ 多单平仓CLOSE成功")
         long_position_list.remove(long_position_list[-1])
         position = api.get_position(symbol)
@@ -103,10 +103,9 @@ def open_short_position():
         #print(f"订单状态: {order.status}")
 
     # 检查最终状态
-    if order.status == "FINISHED":
-        print("✅ 空单建仓OPEN成功!")
-        if not math.isnan(order.trade_price):
-            short_position_list.append(order.trade_price)
+    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
+        print("✅ 空单建仓OPEN成功!")    
+        short_position_list.append(order.trade_price)
         position = api.get_position(symbol)
         print(f"持仓: 空单{position.pos_short}手, 持仓列表{short_position_list}")
     else:
@@ -121,7 +120,7 @@ def close_short():
     while order.status == "ALIVE":
         api.wait_update()
     
-    if order.status == "FINISHED":
+    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
         print("✅ 空单平仓CLOSE成功")
         short_position_list.remove(short_position_list[-1])
         position = api.get_position(symbol)
