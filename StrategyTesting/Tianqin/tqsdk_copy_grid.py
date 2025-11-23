@@ -16,8 +16,11 @@ symbol = "DCE.m2601"  # 修改为你需要的合约
 quote = api.get_quote(symbol)
 klines = api.get_kline_serial(symbol, 60, data_length=100)
 long_position_list = []
+short_position_list = []
 copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
 touch_top_step = 6
+copy_top_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+touch_bottom_step = 6
 
 def print_latest_price():
     latest_price = quote.last_price
@@ -63,6 +66,43 @@ def close_long():
         print(f"平仓失败，订单状态: {order.status}")
     print_latest_price()
 
+def open_short_position():
+    order = api.insert_order(symbol=symbol, direction="SELL", offset="OPEN", volume=1)
+    print("空单开仓OPEN订单已提交")
+
+    # 等待订单成交
+    while order.status == "ALIVE":
+        api.wait_update()
+        #print(f"订单状态: {order.status}")
+
+    # 检查最终状态
+    if order.status == "FINISHED":
+        print("✅ 空单建仓OPEN成功!")
+        if not math.isnan(order.trade_price):
+            short_position_list.append(order.trade_price)
+        position = api.get_position(symbol)
+        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}")
+    else:
+        print(f"❌ 订单异常: {order.status}")
+    print_latest_price()
+
+def close_short():
+    order = api.insert_order(symbol=symbol, direction="BUY", offset="CLOSE", volume=1)
+    print("空单平仓CLOSE订单已提交")
+    
+    # 等待订单成交
+    while order.status == "ALIVE":
+        api.wait_update()
+    
+    if order.status == "FINISHED":
+        print("✅ 空单平仓CLOSE成功")
+        short_position_list.remove(short_position_list[-1])
+        position = api.get_position(symbol)
+        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}")
+    else:
+        print(f"平仓失败，订单状态: {order.status}")
+    print_latest_price()
+
 try:
     while True:
         api.wait_update()  # 等待数据更新
@@ -92,6 +132,20 @@ try:
             dynamic_step = len(long_position_list) * touch_top_step
             if (quote.last_price - long_position_list[-1]) >= dynamic_step:
                 close_long()
+
+        if quote.last_price < ma_60:
+            if position.volume_short == 0:
+                open_short_position()
+
+            if short_position_list:
+                last_index = short_position_list.index(short_position_list[-1])
+                if (quote.last_price - short_position_list[-1]) >= copy_top_step[last_index]:
+                    open_short_position()
+
+        if short_position_list:
+            dynamic_step = dynamic_step = len(short_position_list) * touch_bottom_step
+            if (short_position_list[-1] - quote.last_price) >= dynamic_step:
+                close_short()
             
         #time.sleep(1)
 except KeyboardInterrupt:
