@@ -1,14 +1,13 @@
-import logging, sys, os
 from datetime import date
 from tqsdk import TqApi, TqAuth, TqSim, TqBacktest
 import time, math
 
 # 创建API连接
 api =  TqApi(account=TqSim(init_balance=100000),
-             backtest=TqBacktest(start_dt=date(2025, 11, 19), end_dt=date(2025, 11, 22)),
+             backtest=TqBacktest(start_dt=date(2025, 1, 21), end_dt=date(2025, 11, 22)),
              web_gui=True, 
              auth=TqAuth("cadofa", "cadofa6688"),
-             debug=None)
+             debug=False)
 symbol = "DCE.m2601"  # 修改为你需要的合约
 #symbol = "CZCE.FG601"
 #symbol = "CZCE.SA601"
@@ -18,6 +17,7 @@ quote = api.get_quote(symbol)
 klines = api.get_kline_serial(symbol, 60, data_length=100)  # 1分钟K线，保留100根
 short_position_list = []
 copy_top_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+touch_bottom_step = 6
 
 def print_latest_price():
     latest_price = quote.last_price
@@ -89,7 +89,7 @@ try:
                     open_short_position()
 
         if short_position_list:
-            dynamic_step = quote.last_price * 0.01
+            dynamic_step = dynamic_step = len(short_position_list) * touch_bottom_step
             if (short_position_list[-1] - quote.last_price) >= dynamic_step:
                 close_short()
             

@@ -4,7 +4,7 @@ import time, math
 
 # 创建API连接
 api =  TqApi(account=TqSim(init_balance=100000),
-             backtest=TqBacktest(start_dt=date(2025, 11, 21), end_dt=date(2025, 11, 22)),
+             backtest=TqBacktest(start_dt=date(2025, 1, 21), end_dt=date(2025, 11, 22)),
              web_gui=True, 
              auth=TqAuth("cadofa", "cadofa6688"),
              debug=False)
@@ -17,6 +17,7 @@ quote = api.get_quote(symbol)
 klines = api.get_kline_serial(symbol, 60, data_length=100)
 long_position_list = []
 copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+touch_top_step = 6
 
 def print_latest_price():
     latest_price = quote.last_price
@@ -88,7 +89,7 @@ try:
                     open_long_position()
 
         if long_position_list:
-            dynamic_step = quote.last_price * 0.01
+            dynamic_step = len(long_position_list) * touch_top_step
             if (quote.last_price - long_position_list[-1]) >= dynamic_step:
                 close_long()
             
