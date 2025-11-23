@@ -1,15 +1,16 @@
-import logging
+import logging, sys, os
 from datetime import date
 from tqsdk import TqApi, TqAuth, TqSim, TqBacktest
 import time, math
 
 # 创建API连接
 api =  TqApi(account=TqSim(init_balance=100000),
-             backtest=TqBacktest(start_dt=date(2025, 9, 20), end_dt=date(2025, 11, 21)),
+             backtest=TqBacktest(start_dt=date(2025, 11, 19), end_dt=date(2025, 11, 22)),
              web_gui=True, 
-             auth=TqAuth("cadofa", "cadofa6688"))
-#symbol = "DCE.m2601"  # 修改为你需要的合约
-symbol = "CZCE.FG601"
+             auth=TqAuth("cadofa", "cadofa6688"),
+             debug=None)
+symbol = "DCE.m2601"  # 修改为你需要的合约
+#symbol = "CZCE.FG601"
 #symbol = "CZCE.SA601"
 
 # 获取行情数据
@@ -18,40 +19,50 @@ klines = api.get_kline_serial(symbol, 60, data_length=100)  # 1分钟K线，保�
 short_position_list = []
 copy_top_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
 
+def print_latest_price():
+    latest_price = quote.last_price
+    print(f"最新价格: {latest_price}", end=" | ")
+    print(f"MA60: {ma_60:.2f}")
+    print(f"******"*18)
+    print()
+
 def open_short_position():
     order = api.insert_order(symbol=symbol, direction="SELL", offset="OPEN", volume=1)
-    print(f"已提交空单订单")
+    print("空单开仓OPEN订单已提交")
 
     # 等待订单成交
     while order.status == "ALIVE":
         api.wait_update()
-        print(f"订单状态: {order.status}")
+        #print(f"订单状态: {order.status}")
 
     # 检查最终状态
     if order.status == "FINISHED":
-        print("✅ 空单建仓成功!")
+        print("✅ 空单建仓OPEN成功!")
         if not math.isnan(order.trade_price):
             short_position_list.append(order.trade_price)
         position = api.get_position(symbol)
-        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}, 持仓均价: {position.open_price_short}")
+        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}")
     else:
         print(f"❌ 订单异常: {order.status}")
+    print_latest_price()
 
 def close_short():
     order = api.insert_order(symbol=symbol, direction="BUY", offset="CLOSE", volume=1)
-    print("空单平仓订单已提交")
+    print("空单平仓CLOSE订单已提交")
     
     # 等待订单成交
     while order.status == "ALIVE":
         api.wait_update()
     
     if order.status == "FINISHED":
-        print("✅ 空单平仓成功")
+        print("✅ 空单平仓CLOSE成功")
         short_position_list.remove(short_position_list[-1])
+        position = api.get_position(symbol)
+        print(f"持仓: 空单{position.pos}手, 持仓列表{short_position_list}")
     else:
         print(f"平仓失败，订单状态: {order.status}")
+    print_latest_price()
 
-logging.getLogger("tqsdk").setLevel(logging.WARNING)
 try:
     while True:
         api.wait_update()  # 等待数据更新
