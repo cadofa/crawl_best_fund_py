@@ -14,6 +14,9 @@ class GridStrategy:
         self.klines_1min = api.get_kline_serial(symbol, 60, data_length=100)
         self.klines_1day = api.get_kline_serial(symbol, 24 * 60 * 60, data_length=8)
         
+        #以此获取账户资金情况
+        self.account = api.get_account()
+
         # 持仓价格列表
         self.long_pos_prices = []
         self.short_pos_prices = []
@@ -22,20 +25,16 @@ class GridStrategy:
         self._long_accum_pnl = 0.0
         self._short_accum_pnl = 0.0
 
-    # ---------------- [新增的四个功能函数] ----------------
+    # ---------------- [盈亏计算函数] ----------------
 
     def get_long_float_pnl(self):
-        """
-        1. 多单实时持仓盈亏 (浮动盈亏)
-        公式: (当前价 - 持仓价) * 合约乘数
-        """
+        """多单实时持仓盈亏 (浮动盈亏)"""
         if not self.long_pos_prices:
             return 0.0
         
         current_price = self.quote.last_price
         multiplier = self.quote.volume_multiple
         
-        # 数据未准备好时返回0
         if math.isnan(current_price) or math.isnan(multiplier):
             return 0.0
             
@@ -45,10 +44,7 @@ class GridStrategy:
         return pnl
 
     def get_short_float_pnl(self):
-        """
-        2. 空单实时持仓盈亏 (浮动盈亏)
-        公式: (持仓价 - 当前价) * 合约乘数
-        """
+        """空单实时持仓盈亏 (浮动盈亏)"""
         if not self.short_pos_prices:
             return 0.0
             
@@ -64,18 +60,45 @@ class GridStrategy:
         return pnl
 
     def get_long_accum_pnl(self):
-        """
-        3. 多单累计平仓盈亏
-        """
+        """多单累计平仓盈亏"""
         return self._long_accum_pnl
 
     def get_short_accum_pnl(self):
-        """
-        4. 空单累计平仓盈亏
-        """
+        """空单累计平仓盈亏"""
         return self._short_accum_pnl
 
-    # ---------------- [原有逻辑修改] ----------------
+    # ---------------- [新增：风控检查逻辑] ----------------
+    
+    def _is_risk_triggered(self, direction):
+        """
+        检查指定方向是否触发最大亏损风控
+        Return: True (触发风控，禁止开仓), False (未触发，允许开仓)
+        """
+        # 获取账户动态权益 (balance = 静态权益 + 浮动盈亏)
+        equity = self.account.balance
+        if equity <= 0:
+            return True # 资金不足或异常，禁止开仓
+
+        threshold = self.config.get('max_loss_ratio', 0.05) # 默认5%
+
+        if direction == "BUY":
+            # 多单总盈亏 = 多单浮动 + 多单累计
+            total_pnl = self.get_long_float_pnl() + self.get_long_accum_pnl()
+            
+            # 如果是亏损状态，且亏损金额占比超过阈值
+            if total_pnl < 0 and (abs(total_pnl) / equity) >= threshold:
+                return True
+                
+        elif direction == "SELL":
+            # 空单总盈亏 = 空单浮动 + 空单累计
+            total_pnl = self.get_short_float_pnl() + self.get_short_accum_pnl()
+            
+            if total_pnl < 0 and (abs(total_pnl) / equity) >= threshold:
+                return True
+
+        return False
+
+    # ---------------- [原有逻辑] ----------------
 
     def _get_ma3_trend(self):
         """计算日线MA3趋势"""
@@ -96,23 +119,28 @@ class GridStrategy:
         price = self.quote.last_price
         ma60_str = f"{ma60:.2f}" if ma60 else "计算中"
         
-        # 获取四个盈亏数据
         l_float = self.get_long_float_pnl()
         s_float = self.get_short_float_pnl()
         l_accum = self.get_long_accum_pnl()
         s_accum = self.get_short_accum_pnl()
         
-        print(f"最新价: {price} | MA60: {ma60_str}")
-        print(f"多单浮盈: {l_float:>8.2f} | 多单累计: {l_accum:>8.2f}")
-        print(f"空单浮盈: {s_float:>8.2f} | 空单累计: {s_accum:>8.2f}")
-        print(f"总盈亏: {l_float + s_float + l_accum + s_accum:.2f}")
+        # 计算总盈亏和风险状态用于显示
+        equity = self.account.balance
+        l_total = l_float + l_accum
+        s_total = s_float + s_accum
+        
+        # 简单的风险提示字符串
+        l_risk_str = "[多单暂停]" if self._is_risk_triggered("BUY") else ""
+        s_risk_str = "[空单暂停]" if self._is_risk_triggered("SELL") else ""
+
+        print(f"最新价: {price} | MA60: {ma60_str} | 权益: {equity:.2f}")
+        print(f"多单: 浮盈{l_float:>8.2f} + 累计{l_accum:>8.2f} = 总{l_total:>8.2f} {l_risk_str}")
+        print(f"空单: 浮盈{s_float:>8.2f} + 累计{s_accum:>8.2f} = 总{s_total:>8.2f} {s_risk_str}")
         print(f"******" * 18)
         print()
 
     def _execute_order(self, direction, offset, pos_list):
-        """
-        交易执行函数 (增加了平仓盈亏计算逻辑)
-        """
+        """交易执行函数"""
         if offset == "OPEN":
             order_dir = direction
             action_name = "多单" if direction == "BUY" else "空单"
@@ -121,7 +149,7 @@ class GridStrategy:
             action_name = "多单" if direction == "BUY" else "空单"
 
         act_type = "建仓OPEN" if offset == "OPEN" else "平仓CLOSE"
-        print(f"{action_name}{act_type}订单已提交...")
+        print(f"✅ {action_name}{act_type}订单已提交...")
 
         order = self.api.insert_order(symbol=self.symbol, direction=order_dir, offset=offset, volume=1)
 
@@ -136,25 +164,19 @@ class GridStrategy:
             if offset == "OPEN":
                 pos_list.append(order.trade_price)
             else:
-                # 平仓逻辑
                 if pos_list:
-                    entry_price = pos_list[-1] # 获取最后进场的那个价格
+                    entry_price = pos_list[-1]
                     exit_price = order.trade_price
                     
-                    # --- 核心修改：计算单次平仓盈亏并累加 ---
                     if direction == "BUY": 
-                        # 多单平仓: (卖出价 - 买入价) * 乘数
                         trade_pnl = (exit_price - entry_price) * multiplier
                         self._long_accum_pnl += trade_pnl
                         print(f"   -> 多单本次平仓盈亏: {trade_pnl:.2f}")
                     else: 
-                        # 空单平仓: (卖出价 - 买入价) -> (开仓价 - 平仓价) * 乘数
-                        # 空单是高卖低买
                         trade_pnl = (entry_price - exit_price) * multiplier
                         self._short_accum_pnl += trade_pnl
                         print(f"   -> 空单本次平仓盈亏: {trade_pnl:.2f}")
                     
-                    # 移除持仓列表
                     pos_list.pop()
 
             pos_info = self.api.get_position(self.symbol)
@@ -181,8 +203,13 @@ class GridStrategy:
                         print(f"K线预加载: {len(self.klines_1min)}/60...")
                     continue
 
-                # 2. 多单逻辑
-                if current_price > ma60 and ma3_curr > ma3_prev:
+                # --- 实时检查风控状态 ---
+                is_long_banned = self._is_risk_triggered("BUY")
+                is_short_banned = self._is_risk_triggered("SELL")
+
+                # ================= 2. 多单逻辑 =================
+                # 条件：价格在MA60之上 且 日线MA3上涨 且 未触发多单风控
+                if current_price > ma60 and ma3_curr > ma3_prev and not is_long_banned:
                     if not self.long_pos_prices:
                         self._execute_order("BUY", "OPEN", self.long_pos_prices)
                     elif self.long_pos_prices:
@@ -194,15 +221,16 @@ class GridStrategy:
                         if (last_price - current_price) >= step:
                             self._execute_order("BUY", "OPEN", self.long_pos_prices)
                 
-                # 多单止盈
+                # 多单止盈/平仓 (不受开仓风控影响)
                 if self.long_pos_prices:
                     last_price = self.long_pos_prices[-1]
                     dynamic_step = len(self.long_pos_prices) * self.config['touch_top']
                     if (current_price - last_price) >= dynamic_step:
                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
-                # 3. 空单逻辑
-                if current_price < ma60 and ma3_curr < ma3_prev:
+                # ================= 3. 空单逻辑 =================
+                # 条件：价格在MA60之下 且 日线MA3下跌 且 未触发空单风控
+                if current_price < ma60 and ma3_curr < ma3_prev and not is_short_banned:
                     if not self.short_pos_prices:
                         self._execute_order("SELL", "OPEN", self.short_pos_prices)
                     elif self.short_pos_prices:
@@ -214,7 +242,7 @@ class GridStrategy:
                         if (current_price - last_price) >= step:
                             self._execute_order("SELL", "OPEN", self.short_pos_prices)
 
-                # 空单止盈
+                # 空单止盈/平仓 (不受开仓风控影响)
                 if self.short_pos_prices:
                     last_price = self.short_pos_prices[-1]
                     dynamic_step = len(self.short_pos_prices) * self.config['touch_bottom']
@@ -235,7 +263,8 @@ if __name__ == "__main__":
         "copy_bottom": [5, 6, 8, 10, 13, 15, 18, 21, 34, 55, 89, 55, 34, 21, 18, 15, 13, 10],
         "copy_top": [5, 6, 8, 10, 13, 15, 18, 21, 34, 55, 89, 55, 34, 21, 18, 15, 13, 10],
         "touch_top": 6,
-        "touch_bottom": 6
+        "touch_bottom": 6,
+        "max_loss_ratio": 0.005
     }
     
     #SYMBOL = "CZCE.MA601"
