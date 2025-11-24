@@ -1,186 +1,186 @@
 from datetime import date
 from tqsdk import TqApi, TqAuth, TqSim, TqBacktest
 from tqsdk.ta import MA
-import time, math
+import math
 
-# 创建API连接
-api =  TqApi(account=TqSim(init_balance=100000),
-             backtest=TqBacktest(start_dt=date(2025, 1, 18), end_dt=date(2025, 11, 24)),
-             web_gui=True, 
-             auth=TqAuth("cadofa", "cadofa6688"),
-             debug=False)
-
-#symbol = "DCE.m2601"  
-#symbol = "CZCE.FG601"
-#symbol = "CZCE.SA601"
-symbol = "CZCE.MA601"
-
-# 获取行情数据
-quote = api.get_quote(symbol)
-klines = api.get_kline_serial(symbol, 60, data_length=100)
-long_position_list = []
-short_position_list = []
-copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
-touch_top_step = 6
-copy_top_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
-touch_bottom_step = 6
-
-def get_ma3(symbol, Tapi):
-    """
-    获取最近3天的3日移动平均线值
-    
-    参数:
-    symbol: 品种代码，默认为CFFEX.IF1903
-    auth: 认证信息，格式为(账号, 密码)
-    
-    返回:
-    包含最近3天3日移动平均线值的列表，从早到晚排列
-    如果数据不足或计算失败返回None
-    """
-    k3dlines = Tapi.get_kline_serial(symbol, 24 * 60 * 60, data_length=8)
+class GridStrategy:
+    def __init__(self, symbol, api, config):
+        self.symbol = symbol
+        self.api = api
+        self.config = config
         
-    # 计算N日移动平均线
-    ma = MA(k3dlines, 3)
+        # 初始化数据序列 (TqSDK会自动更新这些序列)
+        self.quote = api.get_quote(symbol)
+        self.klines_1min = api.get_kline_serial(symbol, 60, data_length=100)
+        self.klines_1day = api.get_kline_serial(symbol, 24 * 60 * 60, data_length=8)
         
-    # 获取MA值列表
-    ma_list = list(ma["ma"])
-        
-    # 返回最近3天的MA值
-    return ma_list[-3:]
+        # 持仓价格列表
+        self.long_pos_prices = []
+        self.short_pos_prices = []
 
+    def _get_ma3_trend(self):
+        """计算日线MA3趋势，返回(当前值, 上一值)"""
+        ma_data = MA(self.klines_1day, 3)
+        ma_list = list(ma_data["ma"])
+        # 确保数据足够
+        if len(ma_list) < 3:
+            return 0, 0
+        return ma_list[-1], ma_list[-2]
 
-def print_latest_price():
-    latest_price = quote.last_price
-    print(f"最新价格: {latest_price}", end=" | ")
-    print(f"MA60: {ma_60:.2f}")
-    print(f"******"*18)
-    print()
+    def _get_ma60(self):
+        """计算1分钟线MA60"""
+        if len(self.klines_1min) < 60:
+            return None
+        return self.klines_1min.close.iloc[-60:].mean()
 
-def open_long_position():
-    order = api.insert_order(symbol=symbol, direction="BUY", offset="OPEN", volume=1)
-    print("多单开仓OPEN订单已提交")
+    def _print_status(self, ma60):
+        """打印当前行情状态"""
+        price = self.quote.last_price
+        ma60_str = f"{ma60:.2f}" if ma60 else "计算中"
+        print(f"最新价格: {price} | MA60: {ma60_str}")
+        print(f"******" * 18)
+        print()
 
-    # 等待订单成交
-    while order.status == "ALIVE":
-        api.wait_update()
-        #print(f"订单状态: {order.status}")
-
-    # 检查最终状态
-    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
-        print("✅ 多单建仓OPEN成功!")
-        if not math.isnan(order.trade_price):
-            long_position_list.append(order.trade_price)
-        position = api.get_position(symbol)
-        print(f"持仓: 多单{position.pos_long}手, 持仓列表{long_position_list}")
-    else:
-        print(f"❌ 订单异常: {order.status}")
-    print_latest_price()
-
-def close_long():
-    order = api.insert_order(symbol=symbol, direction="SELL", offset="CLOSE", volume=1)
-    print("多单平仓CLOSE订单已提交")
-    
-    # 等待订单成交
-    while order.status == "ALIVE":
-        api.wait_update()
-    
-    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
-        print("✅ 多单平仓CLOSE成功")
-        long_position_list.remove(long_position_list[-1])
-        position = api.get_position(symbol)
-        print(f"持仓: 多单{position.pos_long}手, 持仓列表{long_position_list}")
-    else:
-        print(f"平仓失败，订单状态: {order.status}")
-    print_latest_price()
-
-def open_short_position():
-    order = api.insert_order(symbol=symbol, direction="SELL", offset="OPEN", volume=1)
-    print("空单开仓OPEN订单已提交")
-
-    # 等待订单成交
-    while order.status == "ALIVE":
-        api.wait_update()
-        #print(f"订单状态: {order.status}")
-
-    # 检查最终状态
-    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
-        print("✅ 空单建仓OPEN成功!")    
-        short_position_list.append(order.trade_price)
-        position = api.get_position(symbol)
-        print(f"持仓: 空单{position.pos_short}手, 持仓列表{short_position_list}")
-    else:
-        print(f"❌ 订单异常: {order.status}")
-    print_latest_price()
-
-def close_short():
-    order = api.insert_order(symbol=symbol, direction="BUY", offset="CLOSE", volume=1)
-    print("空单平仓CLOSE订单已提交")
-    
-    # 等待订单成交
-    while order.status == "ALIVE":
-        api.wait_update()
-    
-    if order.status == "FINISHED" and (not math.isnan(order.trade_price)):
-        print("✅ 空单平仓CLOSE成功")
-        short_position_list.remove(short_position_list[-1])
-        position = api.get_position(symbol)
-        print(f"持仓: 空单{position.pos_short}手, 持仓列表{short_position_list}")
-    else:
-        print(f"平仓失败，订单状态: {order.status}")
-    print_latest_price()
-
-try:
-    while True:
-        api.wait_update()  # 等待数据更新
-
-        ma3_list = get_ma3(symbol, api)
-
-        # 获取最新价格
-        if quote.datetime != 0:
-            latest_price = quote.last_price
-            #print(f"最新价格: {latest_price}", end=" | ")
-        
-        # 计算60周期均线
-        if len(klines) >= 60:
-            ma_60 = klines.close.iloc[-60:].mean()
-            #print(f"MA60: {ma_60:.2f}")
+    def _execute_order(self, direction, offset, pos_list):
+        """
+        统一交易执行函数
+        direction: "BUY" or "SELL" (对于持仓方向)
+        offset: "OPEN" or "CLOSE"
+        pos_list: 对应的持仓价格列表
+        """
+        # 确定实际下单指令方向
+        # 如果是开仓：多单买入，空单卖出
+        # 如果是平仓：多单卖出，空单买入
+        if offset == "OPEN":
+            order_dir = direction
+            action_name = "多单" if direction == "BUY" else "空单"
         else:
-            print(f"K线数量: {len(klines)}/60，均线计算中...")
-        
-        position = api.get_position(symbol)
-        #多单建仓
-        if (quote.last_price > ma_60) and (ma3_list[-1] > ma3_list[-2]):
-            if not long_position_list:
-                open_long_position()
+            order_dir = "SELL" if direction == "BUY" else "BUY"
+            action_name = "多单" if direction == "BUY" else "空单"
 
-            if long_position_list:
-                last_index = long_position_list.index(long_position_list[-1])
-                if (long_position_list[-1] - quote.last_price) >= copy_bottom_step[last_index]:
-                    open_long_position()
-        #多单平仓 
-        if long_position_list:
-            dynamic_step = len(long_position_list) * touch_top_step
-            if (quote.last_price - long_position_list[-1]) >= dynamic_step:
-                close_long()
+        act_type = "建仓OPEN" if offset == "OPEN" else "平仓CLOSE"
+        print(f"{action_name}{act_type}订单已提交")
 
-        #空单建仓
-        if (quote.last_price < ma_60) and (ma3_list[-1] < ma3_list[-2]):
-            if not short_position_list:
-                open_short_position()
+        # 提交订单
+        order = self.api.insert_order(symbol=self.symbol, direction=order_dir, offset=offset, volume=1)
 
-            if short_position_list:
-                last_index = short_position_list.index(short_position_list[-1])
-                if (quote.last_price - short_position_list[-1]) >= copy_top_step[last_index]:
-                    open_short_position()
-        #空单平仓
-        if short_position_list:
-            dynamic_step = dynamic_step = len(short_position_list) * touch_bottom_step
-            if (short_position_list[-1] - quote.last_price) >= dynamic_step:
-                close_short()
+        # 等待成交
+        while order.status == "ALIVE":
+            self.api.wait_update()
+
+        # 检查结果
+        if order.status == "FINISHED" and not math.isnan(order.trade_price):
+            print(f"✅ {action_name}{act_type}成功!")
             
-        #time.sleep(1)
-except KeyboardInterrupt:
-    print("\n程序结束")
+            # 更新内存中的持仓列表
+            if offset == "OPEN":
+                pos_list.append(order.trade_price)
+            else:
+                if pos_list:
+                    # LIFO: 移除最后进场的
+                    pos_list.pop()
 
-finally:
-    api.close()
+            # 打印持仓信息
+            pos_info = self.api.get_position(self.symbol)
+            pos_vol = pos_info.pos_long if direction == "BUY" else pos_info.pos_short
+            print(f"持仓: {action_name}{pos_vol}手, 持仓列表{pos_list}")
+            
+            # 交易完成后打印行情
+            self._print_status(self._get_ma60())
+            return True
+        else:
+            print(f"❌ 订单异常: {order.status}")
+            self._print_status(self._get_ma60())
+            return False
+
+    def run(self):
+        try:
+            while True:
+                self.api.wait_update()
+
+                # 1. 数据准备
+                current_price = self.quote.last_price
+                ma60 = self._get_ma60()
+                ma3_curr, ma3_prev = self._get_ma3_trend()
+
+                if ma60 is None or self.quote.datetime == 0:
+                    print(f"K线数量: {len(self.klines_1min)}/60，初始化中...")
+                    continue
+
+                # 2. 多单逻辑
+                # 条件：价格在MA60之上 且 日线MA3上涨
+                if current_price > ma60 and ma3_curr > ma3_prev:
+                    # 首单开仓
+                    if not self.long_pos_prices:
+                        self._execute_order("BUY", "OPEN", self.long_pos_prices)
+                    # 补仓 (Martingale)
+                    elif self.long_pos_prices:
+                        last_price = self.long_pos_prices[-1]
+                        # 获取当前层级对应的步长
+                        idx = len(self.long_pos_prices) - 1
+                        # 防止索引越界，超过配置长度取最后一个
+                        step_cfg = self.config['copy_bottom']
+                        step = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
+                        
+                        if (last_price - current_price) >= step:
+                            self._execute_order("BUY", "OPEN", self.long_pos_prices)
+                
+                # 多单止盈/平仓
+                if self.long_pos_prices:
+                    last_price = self.long_pos_prices[-1]
+                    dynamic_step = len(self.long_pos_prices) * self.config['touch_top']
+                    if (current_price - last_price) >= dynamic_step:
+                        self._execute_order("BUY", "CLOSE", self.long_pos_prices)
+
+                # 3. 空单逻辑
+                # 条件：价格在MA60之下 且 日线MA3下跌
+                if current_price < ma60 and ma3_curr < ma3_prev:
+                    # 首单开仓
+                    if not self.short_pos_prices:
+                        self._execute_order("SELL", "OPEN", self.short_pos_prices)
+                    # 补仓
+                    elif self.short_pos_prices:
+                        last_price = self.short_pos_prices[-1]
+                        idx = len(self.short_pos_prices) - 1
+                        step_cfg = self.config['copy_top']
+                        step = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
+                        
+                        if (current_price - last_price) >= step:
+                            self._execute_order("SELL", "OPEN", self.short_pos_prices)
+
+                # 空单止盈/平仓
+                if self.short_pos_prices:
+                    last_price = self.short_pos_prices[-1]
+                    dynamic_step = len(self.short_pos_prices) * self.config['touch_bottom']
+                    if (last_price - current_price) >= dynamic_step:
+                        self._execute_order("SELL", "CLOSE", self.short_pos_prices)
+
+        except KeyboardInterrupt:
+            print("\n程序结束")
+        finally:
+            self.api.close()
+
+# --- 配置与入口 ---
+if __name__ == "__main__":
+    # 策略参数配置
+    STRATEGY_CONFIG = {
+        "copy_bottom": [5, 6, 8, 10, 13, 15, 18, 21, 34, 55, 89, 55, 34, 21, 18, 15, 13, 10],
+        "copy_top": [5, 6, 8, 10, 13, 15, 18, 21, 34, 55, 89, 55, 34, 21, 18, 15, 13, 10],
+        "touch_top": 6,
+        "touch_bottom": 6
+    }
+    
+    SYMBOL = "CZCE.MA601"
+
+    # 创建API实例
+    api = TqApi(
+        account=TqSim(init_balance=100000),
+        backtest=TqBacktest(start_dt=date(2025, 10, 18), end_dt=date(2025, 11, 24)),
+        web_gui=True,
+        auth=TqAuth("cadofa", "cadofa6688"),
+        debug=False
+    )
+
+    # 运行策略
+    strategy = GridStrategy(SYMBOL, api, STRATEGY_CONFIG)
+    strategy.run()
