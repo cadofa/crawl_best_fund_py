@@ -20,11 +20,14 @@ class GridStrategy:
         self.long_pos_prices = []
         self.short_pos_prices = []
         
-        self._long_accum_pnl = 0.0
-        self._short_accum_pnl = 0.0
+        # 风控状态管理变量
+        self.banned_direction = None   # 当前被暂停的方向: "BUY", "SELL" 或 None
+        self.prev_long_risky = False   # 上一帧多单是否超阈值
+        self.prev_short_risky = False  # 上一帧空单是否超阈值
 
     # ---------------- [盈亏计算函数] ----------------
     def get_long_float_pnl(self):
+        """计算多单浮动盈亏"""
         if not self.long_pos_prices: return 0.0
         current_price = self.quote.last_price
         multiplier = self.quote.volume_multiple
@@ -35,6 +38,7 @@ class GridStrategy:
         return pnl
 
     def get_short_float_pnl(self):
+        """计算空单浮动盈亏"""
         if not self.short_pos_prices: return 0.0
         current_price = self.quote.last_price
         multiplier = self.quote.volume_multiple
@@ -44,21 +48,78 @@ class GridStrategy:
             pnl += (entry_price - current_price) * multiplier
         return pnl
 
-    def get_long_accum_pnl(self): return self._long_accum_pnl
-    def get_short_accum_pnl(self): return self._short_accum_pnl
-
-    # ---------------- [风控检查] ----------------
-    def _is_risk_triggered(self, direction):
+    # ---------------- [风控核心逻辑 (新)] ----------------
+    
+    def _check_raw_threshold(self, direction):
+        """
+        纯粹计算是否超过风控阈值，不涉及暂停逻辑
+        """
         equity = self.account.balance
-        if equity <= 0: return True 
+        if equity <= 0: return True
         threshold = self.config.get('max_loss_ratio', 0.05)
+
         if direction == "BUY":
-            total_pnl = self.get_long_float_pnl() + self.get_long_accum_pnl()
-            if total_pnl < 0 and (abs(total_pnl) / equity) >= threshold: return True
+            float_pnl = self.get_long_float_pnl()
+            # 浮亏状态 且 占比超过阈值
+            if float_pnl < 0 and (abs(float_pnl) / equity) >= threshold:
+                return True
         elif direction == "SELL":
-            total_pnl = self.get_short_float_pnl() + self.get_short_accum_pnl()
-            if total_pnl < 0 and (abs(total_pnl) / equity) >= threshold: return True
+            float_pnl = self.get_short_float_pnl()
+            if float_pnl < 0 and (abs(float_pnl) / equity) >= threshold:
+                return True
         return False
+
+    def _update_risk_state(self):
+        """
+        更新风控状态机 (处理互斥逻辑)
+        规则：后触发风控的方向，会抢占暂停权，从而释放先触发的方向
+        """
+        # 1. 计算当前的原始风险状态
+        curr_long_risky = self._check_raw_threshold("BUY")
+        curr_short_risky = self._check_raw_threshold("SELL")
+
+        # 2. 检测哪个方向是“新触发”的 (上升沿检测)
+        new_long_trigger = curr_long_risky and not self.prev_long_risky
+        new_short_trigger = curr_short_risky and not self.prev_short_risky
+
+        # 3. 状态转移逻辑
+        if new_long_trigger:
+            # 多单新触发风控 -> 暂停多单 (如果之前暂停的是空单，这里会自动切换为暂停多单，即释放空单)
+            self.banned_direction = "BUY"
+            
+        elif new_short_trigger:
+            # 空单新触发风控 -> 暂停空单 (如果之前暂停的是多单，这里会自动切换为暂停空单，即释放多单)
+            self.banned_direction = "SELL"
+            
+        else:
+            # 没有新触发的情况，检查恢复逻辑
+            if self.banned_direction == "BUY":
+                # 如果当前暂停的是多单，但多单已经不超阈值了
+                if not curr_long_risky:
+                    # 如果此时空单超阈值，则转为暂停空单
+                    if curr_short_risky:
+                        self.banned_direction = "SELL"
+                    else:
+                        self.banned_direction = None
+                        
+            elif self.banned_direction == "SELL":
+                # 如果当前暂停的是空单，但空单已经不超阈值了
+                if not curr_short_risky:
+                    # 如果此时多单超阈值，则转为暂停多单
+                    if curr_long_risky:
+                        self.banned_direction = "BUY"
+                    else:
+                        self.banned_direction = None
+
+        # 4. 更新历史状态供下一帧对比
+        self.prev_long_risky = curr_long_risky
+        self.prev_short_risky = curr_short_risky
+
+    def _is_risk_triggered(self, direction):
+        """
+        对外接口：查询当前方向是否被暂停
+        """
+        return self.banned_direction == direction
 
     # ---------------- [辅助函数] ----------------
     def _get_ma3_trend(self):
@@ -74,31 +135,34 @@ class GridStrategy:
     def _print_status(self, ma60):
         price = self.quote.last_price
         ma60_str = f"{ma60:.2f}" if ma60 else "计算中"
+        
         l_float = self.get_long_float_pnl()
         s_float = self.get_short_float_pnl()
-        l_accum = self.get_long_accum_pnl()
-        s_accum = self.get_short_accum_pnl()
+        
         equity = self.account.balance
-        l_total = l_float + l_accum
-        s_total = s_float + s_accum
-        l_risk_str = "[多单暂停]" if self._is_risk_triggered("BUY") else ""
-        s_risk_str = "[空单暂停]" if self._is_risk_triggered("SELL") else ""
+        
+        # 显示当前被Ban的状态
+        l_risk_str = "[⛔暂停开仓]" if self.banned_direction == "BUY" else ""
+        s_risk_str = "[⛔暂停开仓]" if self.banned_direction == "SELL" else ""
+        
+        # 如果虽然超阈值但被释放了，加个提示
+        if self._check_raw_threshold("BUY") and self.banned_direction != "BUY":
+            l_risk_str = "[⚠️超阈值但放开]"
+        if self._check_raw_threshold("SELL") and self.banned_direction != "SELL":
+            s_risk_str = "[⚠️超阈值但放开]"
 
-        print(f"最新价: {price} | MA60: {ma60_str} | 权益: {equity:.2f}")
-        print(f"多单: 浮盈{l_float:>8.2f} + 累计{l_accum:>8.2f} = 总{l_total:>8.2f} {l_risk_str}")
-        print(f"空单: 浮盈{s_float:>8.2f} + 累计{s_accum:>8.2f} = 总{s_total:>8.2f} {s_risk_str}")
+        print(f"最新价: {price} | MA60: {ma60_str} | 权益(含浮盈): {equity:.2f}")
+        print(f"多单: {len(self.long_pos_prices)}手 | 浮动盈亏: {l_float:>8.2f} {l_risk_str}")
+        print(f"空单: {len(self.short_pos_prices)}手 | 浮动盈亏: {s_float:>8.2f} {s_risk_str}")
         print(f"******" * 18)
         print()
 
-    # ---------------- [修改后：自动识别平今/平昨的下单逻辑] ----------------
+    # ---------------- [交易执行逻辑] ----------------
 
     def _execute_order(self, direction, offset, pos_list):
         """
-        交易执行函数
-        1. 自动处理上期所(SHFE)平今/平昨问题
-        2. 使用对手价(买一/卖一)下单
+        交易执行函数 (保持不变)
         """
-        # 1. 确定基本方向
         if offset == "OPEN":
             order_dir = direction
             action_name = "多单" if direction == "BUY" else "空单"
@@ -106,26 +170,19 @@ class GridStrategy:
             order_dir = "SELL" if direction == "BUY" else "BUY"
             action_name = "多单" if direction == "BUY" else "空单"
 
-        # 2. 针对上期所(SHFE)和能源中心(INE)进行平今平昨检查
         final_offset = offset
         if offset != "OPEN":
             exchange = self.symbol.split('.')[0]
             if exchange in ["SHFE", "INE"]:
                 pos = self.api.get_position(self.symbol)
-                # 这里的 logic 是：因为我们每次只平 1 手 (volume=1)
-                # 如果是平多单 (Order Dir is SELL)
                 if order_dir == "SELL":
-                    # 如果历史多单(pos_long_his) > 0，优先平昨(CLOSE)；否则平今(CLOSETODAY)
                     if pos.pos_long_his > 0:
                         final_offset = "CLOSE"
                         print("   [提示] 上期所优先平昨仓")
                     else:
                         final_offset = "CLOSETODAY"
                         print("   [提示] 上期所平今仓 (无历史持仓)")
-                
-                # 如果是平空单 (Order Dir is BUY)
                 else: 
-                    # 如果历史空单(pos_short_his) > 0，优先平昨；否则平今
                     if pos.pos_short_his > 0:
                         final_offset = "CLOSE"
                         print("   [提示] 上期所优先平昨仓")
@@ -135,8 +192,6 @@ class GridStrategy:
 
         act_type = "建仓OPEN" if offset == "OPEN" else f"平仓{final_offset}"
         
-        # 3. 确定价格 (对手价逻辑)
-        # 买入挂卖一，卖出挂买一
         if order_dir == "BUY":
             limit_price = self.quote.ask_price1
             price_desc = "卖一价"
@@ -144,7 +199,6 @@ class GridStrategy:
             limit_price = self.quote.bid_price1
             price_desc = "买一价"
 
-        # 价格异常处理
         if math.isnan(limit_price):
             limit_price = self.quote.last_price
             price_desc = "最新价(兜底)"
@@ -155,11 +209,10 @@ class GridStrategy:
 
         print(f"✅ {action_name}{act_type}订单提交 | {price_desc}: {limit_price}")
 
-        # 4. 发送订单
         order = self.api.insert_order(
             symbol=self.symbol, 
             direction=order_dir, 
-            offset=final_offset,  # 使用修正后的 offset
+            offset=final_offset,
             volume=1, 
             limit_price=limit_price
         )
@@ -170,30 +223,17 @@ class GridStrategy:
         if order.status == "FINISHED" and not math.isnan(order.trade_price):
             print(f"✅ {action_name}{act_type}成功! 成交均价: {order.trade_price}")
             
-            multiplier = self.quote.volume_multiple if not math.isnan(self.quote.volume_multiple) else 1.0
-            
-            # 更新持仓列表和盈亏
             if offset == "OPEN":
                 pos_list.append(order.trade_price)
             else:
                 if pos_list:
-                    entry_price = pos_list[-1]
-                    exit_price = order.trade_price
-                    
-                    if direction == "BUY": 
-                        trade_pnl = (exit_price - entry_price) * multiplier
-                        self._long_accum_pnl += trade_pnl
-                        print(f"   -> 多单本次平仓盈亏: {trade_pnl:.2f}")
-                    else: 
-                        trade_pnl = (entry_price - exit_price) * multiplier
-                        self._short_accum_pnl += trade_pnl
-                        print(f"   -> 空单本次平仓盈亏: {trade_pnl:.2f}")
-                    
                     pos_list.pop()
+                    print(f"   -> {action_name}平仓完成，释放保证金")
 
             pos_info = self.api.get_position(self.symbol)
             pos_vol = pos_info.pos_long if direction == "BUY" else pos_info.pos_short
-            print(f"持仓: {action_name}{pos_vol}手, 列表: {pos_list}")
+            
+            print(f"当前持仓量: {action_name}{pos_vol}手 | 持仓列表: {pos_list}")
             
             self._print_status(self._get_ma60())
             return True
@@ -205,6 +245,10 @@ class GridStrategy:
         try:
             while True:
                 self.api.wait_update()
+                
+                # --- 1. 更新风控状态机 ---
+                self._update_risk_state()
+
                 current_price = self.quote.last_price
                 ma60 = self._get_ma60()
                 ma3_curr, ma3_prev = self._get_ma3_trend()
@@ -216,10 +260,11 @@ class GridStrategy:
                 
                 if math.isnan(current_price): continue
 
+                # --- 2. 获取当前是否暂停 ---
                 is_long_banned = self._is_risk_triggered("BUY")
                 is_short_banned = self._is_risk_triggered("SELL")
 
-                # ================= 2. 多单逻辑 =================
+                # ================= 3. 多单逻辑 =================
                 if current_price > ma60 and ma3_curr > ma3_prev and not is_long_banned:
                     if not self.long_pos_prices:
                         self._execute_order("BUY", "OPEN", self.long_pos_prices)
@@ -237,7 +282,7 @@ class GridStrategy:
                     if (current_price - last_price) >= dynamic_step:
                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
-                # ================= 3. 空单逻辑 =================
+                # ================= 4. 空单逻辑 =================
                 if current_price < ma60 and ma3_curr < ma3_prev and not is_short_banned:
                     if not self.short_pos_prices:
                         self._execute_order("SELL", "OPEN", self.short_pos_prices)
@@ -259,8 +304,7 @@ class GridStrategy:
             print("\n程序结束")
         finally:
             print("\n=== 最终统计 ===")
-            print(f"多单最终累计盈亏: {self.get_long_accum_pnl():.2f}")
-            print(f"空单最终累计盈亏: {self.get_short_accum_pnl():.2f}")
+            print(f"账户最终权益: {self.account.balance:.2f}")
             self.api.close()
 
 if __name__ == "__main__":
@@ -275,9 +319,9 @@ if __name__ == "__main__":
     
     #SYMBOL = "CZCE.MA601"
     #SYMBOL = "DCE.m2601"  
-    SYMBOL = "CZCE.FG601"
+    #SYMBOL = "CZCE.FG601"
     #SYMBOL = "CZCE.SA601"
-    #SYMBOL = "SHFE.rb2601"
+    SYMBOL = "SHFE.rb2601"
 
     # 创建API实例
     api = TqApi(
