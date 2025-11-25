@@ -314,7 +314,7 @@ if __name__ == "__main__":
         "copy_top": [5, 6, 8, 10, 13, 15, 18, 21, 34, 55, 89, 55, 34, 21, 18, 15, 13, 10],
         "touch_top": 6,
         "touch_bottom": 6,
-        "max_loss_ratio": 0.005
+        "max_loss_ratio": 0.01
     }
     
     #SYMBOL = "CZCE.MA601"
@@ -326,7 +326,7 @@ if __name__ == "__main__":
     # 创建API实例
     api = TqApi(
         account=TqSim(init_balance=100000),
-        backtest=TqBacktest(start_dt=date(2025, 1, 18), end_dt=date(2025, 11, 26)),
+        backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 26)),
         web_gui=True,
         auth=TqAuth("cadofa", "cadofa6688"),
         debug=False
