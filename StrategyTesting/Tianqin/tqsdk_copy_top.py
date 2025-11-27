@@ -237,7 +237,7 @@ class GrabTopTouchBom_TqSdk:
 
             # C. 摸底平仓
             if self.position_list:
-                dynamic_step = len(self.position_list) * self.touch_bom_step
+                dynamic_step = last_price * 0.01
                 max_pos_price = self.position_list[-1]
                 
                 if (max_pos_price - last_price) >= dynamic_step:
@@ -249,30 +249,16 @@ class GrabTopTouchBom_TqSdk:
                         self.insert_order("BUY", target_price, reason_msg)
                         continue
 
-            # D. 连续追平
-            if self.position_list and self.operation_stack:
-                last_op_price, last_op_dir = self.operation_stack[-1]
-                if last_op_dir == "B":
-                    if (last_op_price - last_price) >= self.touch_bom_step:
-                        if self.current_order is None:
-                            target_price = last_price + 1
-                            self.operation_stack.append((target_price, "B"))
-                            
-                            reason_msg = f"追跌平仓 (上次平仓{last_op_price} - 当前价{last_price} >= 步长{self.touch_bom_step})"
-                            self.insert_order("BUY", target_price, reason_msg)
-                            continue
-
-
 if __name__ == "__main__":
     # 示例：现在切换合约会自动生成不同的文件
-    #SYMBOL = "CZCE.FG601"
+    SYMBOL = "CZCE.MA601"
     #SYMBOL = "DCE.m2601"
-    SYMBOL = "SHFE.rb2601" 
+    #SYMBOL = "SHFE.rb2601" 
     
     try:
         api = TqApi(
             account=TqSim(init_balance=100000),
-            backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 26)),
+            backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 27)),
             web_gui=True,
             auth=TqAuth("cadofa", "cadofa6688"),
             debug=False
