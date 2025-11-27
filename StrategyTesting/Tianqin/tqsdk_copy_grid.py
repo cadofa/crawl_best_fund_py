@@ -152,8 +152,8 @@ class GridStrategy:
             s_risk_str = "[⚠️超阈值但放开]"
 
         print(f"最新价: {price} | MA60: {ma60_str} | 权益(含浮盈): {equity:.2f}")
-        print(f"多单: {len(self.long_pos_prices)}手 | 浮动盈亏: {l_float:>8.2f} {l_risk_str}")
-        print(f"空单: {len(self.short_pos_prices)}手 | 浮动盈亏: {s_float:>8.2f} {s_risk_str}")
+        print(f"多单: {len(self.long_pos_prices)}手 | 浮动盈亏: {l_float:>8.2f} {l_risk_str} | {self.long_pos_prices}")
+        print(f"空单: {len(self.short_pos_prices)}手 | 浮动盈亏: {s_float:>8.2f} {s_risk_str} | {self.short_pos_prices}")
         print(f"******" * 18)
         print()
 
@@ -278,7 +278,7 @@ class GridStrategy:
                 
                 if self.long_pos_prices:
                     last_price = self.long_pos_prices[-1]
-                    dynamic_step = len(self.long_pos_prices) * self.config['touch_top']
+                    dynamic_step = current_price * 0.01
                     if (current_price - last_price) >= dynamic_step:
                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
@@ -296,7 +296,7 @@ class GridStrategy:
 
                 if self.short_pos_prices:
                     last_price = self.short_pos_prices[-1]
-                    dynamic_step = len(self.short_pos_prices) * self.config['touch_bottom']
+                    dynamic_step = current_price * 0.01
                     if (last_price - current_price) >= dynamic_step:
                         self._execute_order("SELL", "CLOSE", self.short_pos_prices)
 
@@ -320,13 +320,13 @@ if __name__ == "__main__":
     #SYMBOL = "CZCE.MA601"
     #SYMBOL = "DCE.m2601"  
     #SYMBOL = "CZCE.FG601"
-    #SYMBOL = "CZCE.SA601"
-    SYMBOL = "SHFE.rb2601"
+    SYMBOL = "CZCE.SA601"
+    #SYMBOL = "SHFE.rb2601"
 
     # 创建API实例
     api = TqApi(
         account=TqSim(init_balance=100000),
-        backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 26)),
+        backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 28)),
         web_gui=True,
         auth=TqAuth("cadofa", "cadofa6688"),
         debug=False
