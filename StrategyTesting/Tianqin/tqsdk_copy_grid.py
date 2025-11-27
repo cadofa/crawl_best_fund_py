@@ -317,16 +317,19 @@ if __name__ == "__main__":
         "max_loss_ratio": 0.01
     }
     
+    #SYMBOL = "SHFE.rb2601"
+    #SYMBOL = "DCE.m2601"
     #SYMBOL = "CZCE.MA601"
     #SYMBOL = "DCE.m2601"  
     #SYMBOL = "CZCE.FG601"
-    SYMBOL = "CZCE.SA601"
-    #SYMBOL = "SHFE.rb2601"
+    #SYMBOL = "CZCE.SA601"
+    #SYMBOL = "CZCE.SR601"
+    SYMBOL = "CZCE.TA601"
 
     # 创建API实例
     api = TqApi(
         account=TqSim(init_balance=100000),
-        backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 28)),
+        backtest=TqBacktest(start_dt=date(2025, 5, 18), end_dt=date(2025, 11, 28)),
         web_gui=True,
         auth=TqAuth("cadofa", "cadofa6688"),
         debug=False
