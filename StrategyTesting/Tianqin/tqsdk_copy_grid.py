@@ -250,6 +250,8 @@ class GridStrategy:
                 self._update_risk_state()
 
                 current_price = self.quote.last_price
+                price_tick = self.quote.price_tick  # 获取最小变动价位
+
                 ma60 = self._get_ma60()
                 ma3_curr, ma3_prev = self._get_ma3_trend()
 
@@ -258,7 +260,9 @@ class GridStrategy:
                         print(f"K线预加载: {len(self.klines_1min)}/60...")
                     continue
                 
-                if math.isnan(current_price): continue
+                # 必须确保 price_tick 和 current_price 都是有效值
+                if math.isnan(current_price) or math.isnan(price_tick): 
+                    continue
 
                 # --- 2. 获取当前是否暂停 ---
                 is_long_banned = self._is_risk_triggered("BUY")
@@ -272,13 +276,19 @@ class GridStrategy:
                         last_price = self.long_pos_prices[-1]
                         idx = len(self.long_pos_prices) - 1
                         step_cfg = self.config['copy_bottom']
-                        step = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
+                        # 获取配置的跳动次数
+                        step_ticks = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
+                        # 【修正】: 将跳动次数 * 最小变动价位 = 实际价格步长
+                        step = step_ticks * price_tick
+                        
                         if (last_price - current_price) >= step:
                             self._execute_order("BUY", "OPEN", self.long_pos_prices)
                 
                 if self.long_pos_prices:
                     last_price = self.long_pos_prices[-1]
+                    # 【保持不变】: 平仓步长维持原始逻辑
                     dynamic_step = current_price * 0.01
+                    
                     if (current_price - last_price) >= dynamic_step:
                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
@@ -290,13 +300,19 @@ class GridStrategy:
                         last_price = self.short_pos_prices[-1]
                         idx = len(self.short_pos_prices) - 1
                         step_cfg = self.config['copy_top']
-                        step = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
+                        # 获取配置的跳动次数
+                        step_ticks = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
+                        # 【修正】: 将跳动次数 * 最小变动价位 = 实际价格步长
+                        step = step_ticks * price_tick
+                        
                         if (current_price - last_price) >= step:
                             self._execute_order("SELL", "OPEN", self.short_pos_prices)
 
                 if self.short_pos_prices:
                     last_price = self.short_pos_prices[-1]
+                    # 【保持不变】: 平仓步长维持原始逻辑
                     dynamic_step = current_price * 0.01
+                    
                     if (last_price - current_price) >= dynamic_step:
                         self._execute_order("SELL", "CLOSE", self.short_pos_prices)
 
@@ -334,7 +350,6 @@ if __name__ == "__main__":
         auth=TqAuth("cadofa", "cadofa6688"),
         debug=False
     )
-
     # 运行策略
     strategy = GridStrategy(SYMBOL, api, STRATEGY_CONFIG)
     strategy.run()
