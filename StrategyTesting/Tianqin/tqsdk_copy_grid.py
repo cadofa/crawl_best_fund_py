@@ -19,6 +19,10 @@ class GridStrategy:
         # 持仓价格列表
         self.long_pos_prices = []
         self.short_pos_prices = []
+
+        # --- [新增] 记录上次平仓价格，用于连续止盈逻辑 ---
+        self.last_long_exit_price = None
+        self.last_short_exit_price = None
         
         # 风控状态管理变量
         self.banned_direction = None   # 当前被暂停的方向: "BUY", "SELL" 或 None
@@ -161,7 +165,7 @@ class GridStrategy:
 
     def _execute_order(self, direction, offset, pos_list):
         """
-        交易执行函数 (保持不变)
+        交易执行函数
         """
         if offset == "OPEN":
             order_dir = direction
@@ -223,6 +227,13 @@ class GridStrategy:
         if order.status == "FINISHED" and not math.isnan(order.trade_price):
             print(f"✅ {action_name}{act_type}成功! 成交均价: {order.trade_price}")
             
+            # --- [新增] 如果是平仓操作，记录平仓价格供后续连续平仓逻辑使用 ---
+            if offset != "OPEN":
+                if direction == "BUY":  # 多单平仓
+                    self.last_long_exit_price = order.trade_price
+                elif direction == "SELL": # 空单平仓
+                    self.last_short_exit_price = order.trade_price
+
             if offset == "OPEN":
                 pos_list.append(order.trade_price)
             else:
@@ -276,21 +287,26 @@ class GridStrategy:
                         last_price = self.long_pos_prices[-1]
                         idx = len(self.long_pos_prices) - 1
                         step_cfg = self.config['copy_bottom']
-                        # 获取配置的跳动次数
                         step_ticks = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
-                        # 【修正】: 将跳动次数 * 最小变动价位 = 实际价格步长
                         step = step_ticks * price_tick
                         
                         if (last_price - current_price) >= step:
                             self._execute_order("BUY", "OPEN", self.long_pos_prices)
                 
+                # [原] 多单盈亏触发平仓（基于持仓价）
                 if self.long_pos_prices:
                     last_price = self.long_pos_prices[-1]
-                    # 【保持不变】: 平仓步长维持原始逻辑
                     dynamic_step = current_price * 0.01
-                    
                     if (current_price - last_price) >= dynamic_step:
                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
+
+                # [新] 多单连续平仓逻辑（基于上次平仓价）
+                # 平仓之后如果行情继续涨了1%，则多单继续平仓
+                if self.long_pos_prices and self.last_long_exit_price is not None:
+                    dynamic_step = current_price * 0.01
+                    if (current_price - self.last_long_exit_price) >= dynamic_step:
+                         print(f"🚀 [多单追踪] 价格继续上涨，触发连续平仓")
+                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
                 # ================= 4. 空单逻辑 =================
                 if current_price < ma60 and ma3_curr < ma3_prev and not is_short_banned:
@@ -300,21 +316,27 @@ class GridStrategy:
                         last_price = self.short_pos_prices[-1]
                         idx = len(self.short_pos_prices) - 1
                         step_cfg = self.config['copy_top']
-                        # 获取配置的跳动次数
                         step_ticks = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
-                        # 【修正】: 将跳动次数 * 最小变动价位 = 实际价格步长
                         step = step_ticks * price_tick
                         
                         if (current_price - last_price) >= step:
                             self._execute_order("SELL", "OPEN", self.short_pos_prices)
 
+                # [原] 空单盈亏触发平仓（基于持仓价）
                 if self.short_pos_prices:
                     last_price = self.short_pos_prices[-1]
-                    # 【保持不变】: 平仓步长维持原始逻辑
                     dynamic_step = current_price * 0.01
-                    
                     if (last_price - current_price) >= dynamic_step:
                         self._execute_order("SELL", "CLOSE", self.short_pos_prices)
+
+                # [新] 空单连续平仓逻辑（基于上次平仓价）
+                # 平仓之后如果行情继续跌了1%，则空单继续平仓
+                if self.short_pos_prices and self.last_short_exit_price is not None:
+                    dynamic_step = current_price * 0.01
+                    # 空单做空，价格越低越赚钱，所以是 上次平仓价 - 当前价 > 1%
+                    if (self.last_short_exit_price - current_price) >= dynamic_step:
+                         print(f"🚀 [空单追踪] 价格继续下跌，触发连续平仓")
+                         self._execute_order("SELL", "CLOSE", self.short_pos_prices)
 
         except KeyboardInterrupt:
             print("\n程序结束")
@@ -335,12 +357,12 @@ if __name__ == "__main__":
     
     #SYMBOL = "SHFE.rb2601"
     #SYMBOL = "DCE.m2601"
-    #SYMBOL = "CZCE.MA601"
-    #SYMBOL = "DCE.m2601"  
+    #SYMBOL = "DCE.v2601"  
     #SYMBOL = "CZCE.FG601"
     #SYMBOL = "CZCE.SA601"
     #SYMBOL = "CZCE.SR601"
-    SYMBOL = "CZCE.TA601"
+    SYMBOL = "CZCE.SM601"
+    #SYMBOL = "CZCE.MA601"
 
     # 创建API实例
     api = TqApi(
