@@ -20,7 +20,7 @@ class GridStrategy:
         self.long_pos_prices = []
         self.short_pos_prices = []
 
-        # --- [新增] 记录上次平仓价格，用于连续止盈逻辑 ---
+        # --- 记录上次平仓价格，用于连续止盈逻辑 ---
         self.last_long_exit_price = None
         self.last_short_exit_price = None
         
@@ -52,19 +52,16 @@ class GridStrategy:
             pnl += (entry_price - current_price) * multiplier
         return pnl
 
-    # ---------------- [风控核心逻辑 (新)] ----------------
+    # ---------------- [风控核心逻辑] ----------------
     
     def _check_raw_threshold(self, direction):
-        """
-        纯粹计算是否超过风控阈值，不涉及暂停逻辑
-        """
+        """纯粹计算是否超过风控阈值，不涉及暂停逻辑"""
         equity = self.account.balance
         if equity <= 0: return True
         threshold = self.config.get('max_loss_ratio', 0.05)
 
         if direction == "BUY":
             float_pnl = self.get_long_float_pnl()
-            # 浮亏状态 且 占比超过阈值
             if float_pnl < 0 and (abs(float_pnl) / equity) >= threshold:
                 return True
         elif direction == "SELL":
@@ -74,65 +71,47 @@ class GridStrategy:
         return False
 
     def _update_risk_state(self):
-        """
-        更新风控状态机 (处理互斥逻辑)
-        规则：后触发风控的方向，会抢占暂停权，从而释放先触发的方向
-        """
-        # 1. 计算当前的原始风险状态
+        """更新风控状态机"""
         curr_long_risky = self._check_raw_threshold("BUY")
         curr_short_risky = self._check_raw_threshold("SELL")
 
-        # 2. 检测哪个方向是“新触发”的 (上升沿检测)
         new_long_trigger = curr_long_risky and not self.prev_long_risky
         new_short_trigger = curr_short_risky and not self.prev_short_risky
 
-        # 3. 状态转移逻辑
         if new_long_trigger:
-            # 多单新触发风控 -> 暂停多单 (如果之前暂停的是空单，这里会自动切换为暂停多单，即释放空单)
             self.banned_direction = "BUY"
-            
         elif new_short_trigger:
-            # 空单新触发风控 -> 暂停空单 (如果之前暂停的是多单，这里会自动切换为暂停空单，即释放多单)
             self.banned_direction = "SELL"
-            
         else:
-            # 没有新触发的情况，检查恢复逻辑
             if self.banned_direction == "BUY":
-                # 如果当前暂停的是多单，但多单已经不超阈值了
                 if not curr_long_risky:
-                    # 如果此时空单超阈值，则转为暂停空单
                     if curr_short_risky:
                         self.banned_direction = "SELL"
                     else:
                         self.banned_direction = None
-                        
             elif self.banned_direction == "SELL":
-                # 如果当前暂停的是空单，但空单已经不超阈值了
                 if not curr_short_risky:
-                    # 如果此时多单超阈值，则转为暂停多单
                     if curr_long_risky:
                         self.banned_direction = "BUY"
                     else:
                         self.banned_direction = None
 
-        # 4. 更新历史状态供下一帧对比
         self.prev_long_risky = curr_long_risky
         self.prev_short_risky = curr_short_risky
 
     def _is_risk_triggered(self, direction):
-        """
-        对外接口：查询当前方向是否被暂停
-        """
         return self.banned_direction == direction
 
     # ---------------- [辅助函数] ----------------
     def _get_ma3_trend(self):
+        """返回 (当前MA3, 上一次MA3)"""
         ma_data = MA(self.klines_1day, 3)
         ma_list = list(ma_data["ma"])
         if len(ma_list) < 3: return 0, 0
         return ma_list[-1], ma_list[-2]
 
     def _get_ma60(self):
+        """获取当前1分钟K线的MA60值"""
         if len(self.klines_1min) < 60: return None
         return self.klines_1min.close.iloc[-60:].mean()
 
@@ -145,11 +124,9 @@ class GridStrategy:
         
         equity = self.account.balance
         
-        # 显示当前被Ban的状态
         l_risk_str = "[⛔暂停开仓]" if self.banned_direction == "BUY" else ""
         s_risk_str = "[⛔暂停开仓]" if self.banned_direction == "SELL" else ""
         
-        # 如果虽然超阈值但被释放了，加个提示
         if self._check_raw_threshold("BUY") and self.banned_direction != "BUY":
             l_risk_str = "[⚠️超阈值但放开]"
         if self._check_raw_threshold("SELL") and self.banned_direction != "SELL":
@@ -164,9 +141,6 @@ class GridStrategy:
     # ---------------- [交易执行逻辑] ----------------
 
     def _execute_order(self, direction, offset, pos_list):
-        """
-        交易执行函数
-        """
         if offset == "OPEN":
             order_dir = direction
             action_name = "多单" if direction == "BUY" else "空单"
@@ -185,14 +159,14 @@ class GridStrategy:
                         print("   [提示] 上期所优先平昨仓")
                     else:
                         final_offset = "CLOSETODAY"
-                        print("   [提示] 上期所平今仓 (无历史持仓)")
+                        print("   [提示] 上期所平今仓")
                 else: 
                     if pos.pos_short_his > 0:
                         final_offset = "CLOSE"
                         print("   [提示] 上期所优先平昨仓")
                     else:
                         final_offset = "CLOSETODAY"
-                        print("   [提示] 上期所平今仓 (无历史持仓)")
+                        print("   [提示] 上期所平今仓")
 
         act_type = "建仓OPEN" if offset == "OPEN" else f"平仓{final_offset}"
         
@@ -227,11 +201,10 @@ class GridStrategy:
         if order.status == "FINISHED" and not math.isnan(order.trade_price):
             print(f"✅ {action_name}{act_type}成功! 成交均价: {order.trade_price}")
             
-            # --- [新增] 如果是平仓操作，记录平仓价格供后续连续平仓逻辑使用 ---
             if offset != "OPEN":
-                if direction == "BUY":  # 多单平仓
+                if direction == "BUY":
                     self.last_long_exit_price = order.trade_price
-                elif direction == "SELL": # 空单平仓
+                elif direction == "SELL":
                     self.last_short_exit_price = order.trade_price
 
             if offset == "OPEN":
@@ -261,9 +234,11 @@ class GridStrategy:
                 self._update_risk_state()
 
                 current_price = self.quote.last_price
-                price_tick = self.quote.price_tick  # 获取最小变动价位
+                price_tick = self.quote.price_tick
 
+                # 获取当前MA60 (均值)
                 ma60 = self._get_ma60()
+                # 获取MA3趋势
                 ma3_curr, ma3_prev = self._get_ma3_trend()
 
                 if ma60 is None or self.quote.datetime == 0:
@@ -271,15 +246,50 @@ class GridStrategy:
                         print(f"K线预加载: {len(self.klines_1min)}/60...")
                     continue
                 
-                # 必须确保 price_tick 和 current_price 都是有效值
                 if math.isnan(current_price) or math.isnan(price_tick): 
                     continue
+
+                # --- 计算 MA60 的前一周期值，用于判断趋势 ---
+                ma60_prev = None
+                if len(self.klines_1min) >= 61:
+                    # 获取倒数第61根到倒数第2根的均值 (即上一分钟的MA60)
+                    ma60_prev = self.klines_1min.close.iloc[-61:-1].mean()
 
                 # --- 2. 获取当前是否暂停 ---
                 is_long_banned = self._is_risk_triggered("BUY")
                 is_short_banned = self._is_risk_triggered("SELL")
+                
+                # 在每一轮循环开始时获取持仓数量
+                long_count = len(self.long_pos_prices)
+                short_count = len(self.short_pos_prices)
 
-                # ================= 3. 多单逻辑 =================
+                # ================= [新增] 特殊开仓逻辑 =================
+                
+                # 特殊逻辑 1: 双均线向上 + 价格之上 + 多单 < 空单 -> 补多单 (不受约束)
+                if ma60_prev is not None:
+                    ma60_is_up = ma60 > ma60_prev
+                    ma3_is_up = ma3_curr > ma3_prev
+                    
+                    if ma3_is_up and ma60_is_up and current_price > ma3_curr and current_price > ma60:
+                        if long_count < short_count:
+                            print(f"⚡ [特殊策略触发] 趋势向上且多单({long_count})<空单({short_count}) -> 强制开多")
+                            self._execute_order("BUY", "OPEN", self.long_pos_prices)
+                            # 执行后更新计数，防止同一帧重复逻辑
+                            long_count += 1 
+
+                # 特殊逻辑 2: 双均线向下 + 价格之下 + 空单 < 多单 -> 补空单 (不受约束)
+                if ma60_prev is not None:
+                    ma60_is_down = ma60 < ma60_prev
+                    ma3_is_down = ma3_curr < ma3_prev
+
+                    if ma3_is_down and ma60_is_down and current_price < ma3_curr and current_price < ma60:
+                        if short_count < long_count:
+                            print(f"⚡ [特殊策略触发] 趋势向下且空单({short_count})<多单({long_count}) -> 强制开空")
+                            self._execute_order("SELL", "OPEN", self.short_pos_prices)
+                            # 执行后更新计数
+                            short_count += 1  # <--- 已补上
+
+                # ================= 3. 原有多单逻辑 (标准网格) =================
                 if current_price > ma60 and ma3_curr > ma3_prev and not is_long_banned:
                     if not self.long_pos_prices:
                         self._execute_order("BUY", "OPEN", self.long_pos_prices)
@@ -293,22 +303,21 @@ class GridStrategy:
                         if (last_price - current_price) >= step:
                             self._execute_order("BUY", "OPEN", self.long_pos_prices)
                 
-                # [原] 多单盈亏触发平仓（基于持仓价）
+                # 多单止盈
                 if self.long_pos_prices:
                     last_price = self.long_pos_prices[-1]
                     dynamic_step = current_price * 0.01
                     if (current_price - last_price) >= dynamic_step:
                         self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
-                # [新] 多单连续平仓逻辑（基于上次平仓价）
-                # 平仓之后如果行情继续涨了1%，则多单继续平仓
+                # 多单连续止盈
                 if self.long_pos_prices and self.last_long_exit_price is not None:
                     dynamic_step = current_price * 0.01
                     if (current_price - self.last_long_exit_price) >= dynamic_step:
                          print(f"🚀 [多单追踪] 价格继续上涨，触发连续平仓")
                          self._execute_order("BUY", "CLOSE", self.long_pos_prices)
 
-                # ================= 4. 空单逻辑 =================
+                # ================= 4. 原有空单逻辑 (标准网格) =================
                 if current_price < ma60 and ma3_curr < ma3_prev and not is_short_banned:
                     if not self.short_pos_prices:
                         self._execute_order("SELL", "OPEN", self.short_pos_prices)
@@ -322,18 +331,16 @@ class GridStrategy:
                         if (current_price - last_price) >= step:
                             self._execute_order("SELL", "OPEN", self.short_pos_prices)
 
-                # [原] 空单盈亏触发平仓（基于持仓价）
+                # 空单止盈
                 if self.short_pos_prices:
                     last_price = self.short_pos_prices[-1]
                     dynamic_step = current_price * 0.01
                     if (last_price - current_price) >= dynamic_step:
                         self._execute_order("SELL", "CLOSE", self.short_pos_prices)
 
-                # [新] 空单连续平仓逻辑（基于上次平仓价）
-                # 平仓之后如果行情继续跌了1%，则空单继续平仓
+                # 空单连续止盈
                 if self.short_pos_prices and self.last_short_exit_price is not None:
                     dynamic_step = current_price * 0.01
-                    # 空单做空，价格越低越赚钱，所以是 上次平仓价 - 当前价 > 1%
                     if (self.last_short_exit_price - current_price) >= dynamic_step:
                          print(f"🚀 [空单追踪] 价格继续下跌，触发连续平仓")
                          self._execute_order("SELL", "CLOSE", self.short_pos_prices)
@@ -360,14 +367,16 @@ if __name__ == "__main__":
     #SYMBOL = "DCE.v2601"  
     #SYMBOL = "CZCE.FG601"
     #SYMBOL = "CZCE.SA601"
+    #SYMBOL = "CZCE.RM601"
+    SYMBOL = "CZCE.TA601"
     #SYMBOL = "CZCE.SR601"
-    SYMBOL = "CZCE.SM601"
+    #SYMBOL = "CZCE.SM601"
     #SYMBOL = "CZCE.MA601"
 
     # 创建API实例
     api = TqApi(
         account=TqSim(init_balance=100000),
-        backtest=TqBacktest(start_dt=date(2025, 5, 18), end_dt=date(2025, 11, 28)),
+        backtest=TqBacktest(start_dt=date(2025, 5, 18), end_dt=date(2025, 11, 29)),
         web_gui=True,
         auth=TqAuth("cadofa", "cadofa6688"),
         debug=False
