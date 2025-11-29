@@ -29,25 +29,20 @@ class GridStrategy:
         self.prev_long_risky = False
         self.prev_short_risky = False
 
-    # ---------------- [修改：调试信息打印辅助函数] ----------------
+    # ---------------- [调试信息打印辅助函数] ----------------
     def _print_snapshot(self, action_msg):
         """
-        打印动作描述及当前账户权益简报 (修改后)
-        :param action_msg: 当前发生的动作描述字符串
+        打印动作描述及当前账户权益简报
         """
-        # 获取账户当前的实际持仓对象
         pos = self.api.get_position(self.symbol)
-        
         print(f"   [调试] 成交动作: {action_msg}")
-        # 打印实际持仓 (标注多空方向) 和 账户权益
         print(f"   [调试] 账户权益: {self.account.balance:.2f}")
         print(f"   [调试] 实际持仓列表: [多单] {pos.pos_long} 手")
         print(f"   [调试] 实际持仓列表: [空单] {pos.pos_short} 手")
         print("=" * 80 + "\n")
 
-    # ---------------- [盈亏计算函数 (基于虚拟持仓)] ----------------
+    # ---------------- [盈亏计算函数] ----------------
     def get_long_float_pnl(self):
-        """计算多单浮动盈亏 - 风控层使用 LastPrice (盯市盈亏)，避免点差导致的误触风控"""
         if not self.long_pos_prices: return 0.0
         current_price = self.quote.last_price
         multiplier = self.quote.volume_multiple
@@ -58,7 +53,6 @@ class GridStrategy:
         return pnl
 
     def get_short_float_pnl(self):
-        """计算空单浮动盈亏 - 风控层使用 LastPrice (盯市盈亏)"""
         if not self.short_pos_prices: return 0.0
         current_price = self.quote.last_price
         multiplier = self.quote.volume_multiple
@@ -126,11 +120,14 @@ class GridStrategy:
         if len(self.klines_1min) < 60: return None
         return self.klines_1min.close.iloc[-60:].mean()
 
-    # ---------------- [实际下单执行器] ----------------
-    def _place_order_now(self, direction, offset, volume):
-        """发送实际订单的底层函数"""
-        if volume <= 0: return
-
+    # ---------------- [原子化交易执行器] ----------------
+    def _execute_order_core(self, direction, offset, volume, price_type_desc):
+        """
+        底层下单函数，负责发送指令并确认是否成交
+        返回: (bool 是否成功, float 成交价格)
+        """
+        if volume <= 0: return False, 0.0
+        
         # 针对上期所/能源中心的平今/平昨处理
         final_offset = offset
         if offset == "CLOSE":
@@ -148,14 +145,9 @@ class GridStrategy:
                     else:
                         final_offset = "CLOSETODAY"
 
-        order_dir_cn = "买入" if direction == "BUY" else "卖出"
-        offset_cn = "开仓" if final_offset == "OPEN" else "平仓"
-        
-        # 实际下单仍使用对手价以保证成交
+        # 下单价格选择 (对手价)
         limit_price = self.quote.ask_price1 if direction == "BUY" else self.quote.bid_price1
         if math.isnan(limit_price): limit_price = self.quote.last_price
-
-        print(f"⚡ [执行同步] {order_dir_cn}{offset_cn} {volume}手 | 价格: {limit_price}")
         
         order = self.api.insert_order(
             symbol=self.symbol,
@@ -164,39 +156,84 @@ class GridStrategy:
             volume=volume,
             limit_price=limit_price
         )
+        
+        # 等待委托结束
         while order.status == "ALIVE":
             self.api.wait_update()
+            
+        if order.status == "FINISHED" and order.volume_left == 0:
+            return True, order.trade_price
+        else:
+            return False, 0.0
 
-    def _sync_actual_position(self):
-        """同步实际持仓到目标净持仓"""
-        target_net = len(self.long_pos_prices) - len(self.short_pos_prices)
+    def _trade_action(self, action_type, record_price):
+        """
+        执行具体的策略动作，并自动处理净头寸逻辑
+        action_type: "OPEN_LONG", "OPEN_SHORT", "CLOSE_LONG", "CLOSE_SHORT"
+        record_price: 策略逻辑中记录的成本价
+        """
         pos = self.api.get_position(self.symbol)
-        actual_net = pos.pos_long - pos.pos_short
-        diff = target_net - actual_net
+        success = False
+        trade_price = 0.0
+        volume = 1
         
-        if diff == 0: return
-
-        if diff > 0: # 需增加净多头
-            volume = abs(diff)
-            # 优先平空
+        executed_msg = ""
+        
+        # === 逻辑 1: 开多单 (Open Long) ===
+        if action_type == "OPEN_LONG":
+            # 如果有空单，先平空 (Cover)
             if pos.pos_short > 0:
-                cover = min(pos.pos_short, volume)
-                self._place_order_now("BUY", "CLOSE", cover)
-                volume -= cover
-            # 剩余开多
-            if volume > 0:
-                self._place_order_now("BUY", "OPEN", volume)
+                success, trade_price = self._execute_order_core("BUY", "CLOSE", volume, "平空")
+                if success: executed_msg = f"买入平空 (Cover) {trade_price}"
+            else:
+                # 没空单，才开多 (Open)
+                success, trade_price = self._execute_order_core("BUY", "OPEN", volume, "开多")
+                if success: executed_msg = f"买入开仓 (Open) {trade_price}"
+            
+            # 只有成交成功，才更新虚拟列表
+            if success:
+                self.long_pos_prices.append(record_price)
 
-        elif diff < 0: # 需增加净空头
-            volume = abs(diff)
-            # 优先平多
+        # === 逻辑 2: 开空单 (Open Short) ===
+        elif action_type == "OPEN_SHORT":
+            # 如果有多单，先平多 (Sell)
             if pos.pos_long > 0:
-                close = min(pos.pos_long, volume)
-                self._place_order_now("SELL", "CLOSE", close)
-                volume -= close
-            # 剩余开空
-            if volume > 0:
-                self._place_order_now("SELL", "OPEN", volume)
+                success, trade_price = self._execute_order_core("SELL", "CLOSE", volume, "平多")
+                if success: executed_msg = f"卖出平多 (Sell) {trade_price}"
+            else:
+                # 没多单，才开空 (Short)
+                success, trade_price = self._execute_order_core("SELL", "OPEN", volume, "开空")
+                if success: executed_msg = f"卖出开仓 (Short) {trade_price}"
+
+            if success:
+                self.short_pos_prices.append(record_price)
+
+        # === 逻辑 3: 平多单 (Close Long) ===
+        elif action_type == "CLOSE_LONG":
+            if pos.pos_long > 0:
+                success, trade_price = self._execute_order_core("SELL", "CLOSE", volume, "止盈平多")
+                if success: executed_msg = f"卖出平仓 (CloseLong) {trade_price}"
+            else:
+                # 实际没持仓但虚拟有，直接移除虚拟，修正偏差
+                success = True
+                executed_msg = "修正虚拟持仓(无实盘)"
+
+            if success and self.long_pos_prices:
+                self.long_pos_prices.pop()
+
+        # === 逻辑 4: 平空单 (Close Short) ===
+        elif action_type == "CLOSE_SHORT":
+            if pos.pos_short > 0:
+                success, trade_price = self._execute_order_core("BUY", "CLOSE", volume, "止盈平空")
+                if success: executed_msg = f"买入平仓 (CloseShort) {trade_price}"
+            else:
+                success = True
+                executed_msg = "修正虚拟持仓(无实盘)"
+
+            if success and self.short_pos_prices:
+                self.short_pos_prices.pop()
+
+        return success, executed_msg
 
     # ---------------- [主循环] ----------------
     def run(self):
@@ -208,11 +245,10 @@ class GridStrategy:
                 # --- 1. 数据准备 ---
                 current_price = self.quote.last_price
                 
-                # 获取真实对手价用于【记账】，但触发信号依然用 current_price
+                # 获取真实对手价用于【记账】
                 ask_price = self.quote.ask_price1
                 bid_price = self.quote.bid_price1
                 
-                # 数据保护
                 if math.isnan(ask_price) or math.isnan(bid_price):
                     ask_price = current_price
                     bid_price = current_price
@@ -233,45 +269,46 @@ class GridStrategy:
                 is_long_banned = self._is_risk_triggered("BUY")
                 is_short_banned = self._is_risk_triggered("SELL")
 
-                # MA60 前值
-                ma60_prev = None
-                if len(self.klines_1min) >= 61:
-                    ma60_prev = self.klines_1min.close.iloc[-61:-1].mean()
-
-                long_count = len(self.long_pos_prices)
-                short_count = len(self.short_pos_prices)
+                # 获取当前计数
+                curr_long_count = len(self.long_pos_prices)
+                curr_short_count = len(self.short_pos_prices)
 
                 # ==========================================================
-                # ============= 核心逻辑：信号触发与记账分离 =================
+                # ============= 修复点：无条件平衡逻辑 =======================
                 # ==========================================================
+                
+                # 原理：只要两边数量不一致，就优先补齐少的一边，不再判断趋势
+                # 这保证了多空持仓差距永远在 1 以内
+                
+                # 逻辑 A: 多单少，强制开多
+                if curr_long_count < curr_short_count:
+                    ok, msg = self._trade_action("OPEN_LONG", ask_price)
+                    if ok:
+                        self._print_snapshot(f"⚖️ [平衡] 补齐多单 -> {msg}")
+                        curr_long_count += 1 # 更新计数
+                        # 发生了平衡交易后，跳过本帧后续的网格逻辑，避免重复下单
+                        continue 
 
-                # --- 特殊逻辑 1: 趋势向上，强制补多单 ---
-                if ma60_prev is not None:
-                    ma60_is_up = ma60 > ma60_prev
-                    ma3_is_up = ma3_curr > ma3_prev
-                    
-                    if ma3_is_up and ma60_is_up and current_price > ma3_curr and current_price > ma60:
-                        if long_count <= short_count:
-                            self.long_pos_prices.append(ask_price)
-                            long_count += 1 
-                            self._print_snapshot(f"⚡ [虚拟信号] 趋势向上补多单 (Trigger: {current_price}, Cost: {ask_price})")
+                # 逻辑 B: 空单少，强制开空
+                elif curr_short_count < curr_long_count:
+                    ok, msg = self._trade_action("OPEN_SHORT", bid_price)
+                    if ok:
+                        self._print_snapshot(f"⚖️ [平衡] 补齐空单 -> {msg}")
+                        curr_short_count += 1
+                        continue
 
-                # --- 特殊逻辑 2: 趋势向下，强制补空单 ---
-                if ma60_prev is not None:
-                    ma60_is_down = ma60 < ma60_prev
-                    ma3_is_down = ma3_curr < ma3_prev
-
-                    if ma3_is_down and ma60_is_down and current_price < ma3_curr and current_price < ma60:
-                        if short_count <= long_count:
-                            self.short_pos_prices.append(bid_price)
-                            short_count += 1
-                            self._print_snapshot(f"⚡ [虚拟信号] 趋势向下补空单 (Trigger: {current_price}, Cost: {bid_price})")
+                # ==========================================================
+                # ============= 标准网格逻辑 (在已平衡的基础上运行) ===========
+                # ==========================================================
 
                 # --- 3. 标准网格多单逻辑 ---
                 if current_price > ma60 and ma3_curr > ma3_prev and not is_long_banned:
+                    should_buy = False
+                    log_msg = ""
+                    
                     if not self.long_pos_prices:
-                        self.long_pos_prices.append(ask_price)
-                        self._print_snapshot(f"➕ [虚拟信号] 首单开多 (Trigger: {current_price}, Cost: {ask_price})")
+                        should_buy = True
+                        log_msg = "➕ [策略] 首单开多"
                     elif self.long_pos_prices:
                         last_entry = self.long_pos_prices[-1]
                         idx = len(self.long_pos_prices) - 1
@@ -280,8 +317,12 @@ class GridStrategy:
                         step = step_ticks * price_tick
                         
                         if (last_entry - current_price) >= step:
-                            self.long_pos_prices.append(ask_price)
-                            self._print_snapshot(f"➕ [虚拟信号] 网格加多 (Trigger: {current_price}, Cost: {ask_price})")
+                            should_buy = True
+                            log_msg = "➕ [策略] 网格加多"
+
+                    if should_buy:
+                        ok, msg = self._trade_action("OPEN_LONG", ask_price)
+                        if ok: self._print_snapshot(f"{log_msg} -> {msg}")
                 
                 # --- 多单止盈逻辑 ---
                 if self.long_pos_prices:
@@ -289,23 +330,28 @@ class GridStrategy:
                     dynamic_step = current_price * 0.01
                     
                     if (current_price - last_entry) >= dynamic_step:
-                        self.last_long_exit_price = bid_price 
-                        self.long_pos_prices.pop()
-                        self._print_snapshot(f"➖ [虚拟信号] 多单止盈 (Trigger: {current_price}, Sell: {bid_price})")
+                        ok, msg = self._trade_action("CLOSE_LONG", 0) 
+                        if ok:
+                            self.last_long_exit_price = bid_price 
+                            self._print_snapshot(f"➖ [策略] 多单止盈 -> {msg}")
 
                 # 多单连续止盈
                 if self.long_pos_prices and self.last_long_exit_price is not None:
                     dynamic_step = current_price * 0.01
                     if (current_price - self.last_long_exit_price) >= dynamic_step:
-                        self.last_long_exit_price = bid_price
-                        self.long_pos_prices.pop()
-                        self._print_snapshot(f"🚀 [虚拟信号] 多单追踪止盈 (Trigger: {current_price}, Sell: {bid_price})")
+                        ok, msg = self._trade_action("CLOSE_LONG", 0)
+                        if ok:
+                            self.last_long_exit_price = bid_price
+                            self._print_snapshot(f"🚀 [策略] 多单追踪止盈 -> {msg}")
 
                 # --- 4. 标准网格空单逻辑 ---
                 if current_price < ma60 and ma3_curr < ma3_prev and not is_short_banned:
+                    should_sell = False
+                    log_msg = ""
+
                     if not self.short_pos_prices:
-                        self.short_pos_prices.append(bid_price)
-                        self._print_snapshot(f"➕ [虚拟信号] 首单开空 (Trigger: {current_price}, Cost: {bid_price})")
+                        should_sell = True
+                        log_msg = "➕ [策略] 首单开空"
                     elif self.short_pos_prices:
                         last_entry = self.short_pos_prices[-1]
                         idx = len(self.short_pos_prices) - 1
@@ -314,8 +360,12 @@ class GridStrategy:
                         step = step_ticks * price_tick
                         
                         if (current_price - last_entry) >= step:
-                            self.short_pos_prices.append(bid_price)
-                            self._print_snapshot(f"➕ [虚拟信号] 网格加空 (Trigger: {current_price}, Cost: {bid_price})")
+                            should_sell = True
+                            log_msg = "➕ [策略] 网格加空"
+                    
+                    if should_sell:
+                        ok, msg = self._trade_action("OPEN_SHORT", bid_price)
+                        if ok: self._print_snapshot(f"{log_msg} -> {msg}")
 
                 # --- 空单止盈逻辑 ---
                 if self.short_pos_prices:
@@ -323,23 +373,25 @@ class GridStrategy:
                     dynamic_step = current_price * 0.01
                     
                     if (last_entry - current_price) >= dynamic_step:
-                        self.last_short_exit_price = ask_price
-                        self.short_pos_prices.pop()
-                        self._print_snapshot(f"➖ [虚拟信号] 空单止盈 (Trigger: {current_price}, Buy: {ask_price})")
+                        ok, msg = self._trade_action("CLOSE_SHORT", 0)
+                        if ok:
+                            self.last_short_exit_price = ask_price
+                            self._print_snapshot(f"➖ [策略] 空单止盈 -> {msg}")
 
                 # 空单连续止盈
                 if self.short_pos_prices and self.last_short_exit_price is not None:
                     dynamic_step = current_price * 0.01
                     if (self.last_short_exit_price - current_price) >= dynamic_step:
-                        self.last_short_exit_price = ask_price
-                        self.short_pos_prices.pop()
-                        self._print_snapshot(f"🚀 [虚拟信号] 空单追踪止盈 (Trigger: {current_price}, Buy: {ask_price})")
+                        ok, msg = self._trade_action("CLOSE_SHORT", 0)
+                        if ok:
+                            self.last_short_exit_price = ask_price
+                            self._print_snapshot(f"🚀 [策略] 空单追踪止盈 -> {msg}")
 
                 # ==========================================================
-                # ============= 状态同步 ===================================
+                # ============= 状态同步 (兜底) ============================
                 # ==========================================================
-                
-                self._sync_actual_position()
+                # 通常上面的 _trade_action 已经处理了，这里留作双重保险
+                # self._sync_actual_position() 
 
         except KeyboardInterrupt:
             print("\n程序结束")
@@ -358,7 +410,7 @@ if __name__ == "__main__":
         "max_loss_ratio": 0.01
     }
     
-    #SYMBOL = "SHFE.rb2601" #收益率: -5.09%, 年化收益率: -17.02%, 最大回撤: 6.30%, 年化夏普率: -4.2021
+    SYMBOL = "SHFE.rb2601" #收益率: -5.09%, 年化收益率: -17.02%, 最大回撤: 6.30%, 年化夏普率: -4.2021
     #SYMBOL = "DCE.m2601"   #收益率: 3.45%, 年化收益率: 12.89%, 最大回撤: 18.97%, 年化夏普率: 0.4438
     #SYMBOL = "DCE.v2601"   #收益率: -0.87%, 年化收益率: -3.07%, 最大回撤: 4.26%, 年化收益率: -3.07%
     #SYMBOL = "CZCE.FG601"  #收益率: -10.49%, 年化收益率: -32.69%, 最大回撤: 13.31%, 年化夏普率: -1.7583
