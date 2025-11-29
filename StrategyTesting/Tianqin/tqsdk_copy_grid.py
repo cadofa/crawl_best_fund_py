@@ -29,6 +29,22 @@ class GridStrategy:
         self.prev_long_risky = False
         self.prev_short_risky = False
 
+    # ---------------- [修改：调试信息打印辅助函数] ----------------
+    def _print_snapshot(self, action_msg):
+        """
+        打印动作描述及当前账户权益简报 (修改后)
+        :param action_msg: 当前发生的动作描述字符串
+        """
+        # 获取账户当前的实际持仓对象
+        pos = self.api.get_position(self.symbol)
+        
+        print(f"   [调试] 成交动作: {action_msg}")
+        # 打印实际持仓 (标注多空方向) 和 账户权益
+        print(f"   [调试] 账户权益: {self.account.balance:.2f}")
+        print(f"   [调试] 实际持仓列表: [多单] {pos.pos_long} 手")
+        print(f"   [调试] 实际持仓列表: [空单] {pos.pos_short} 手")
+        print("=" * 80 + "\n")
+
     # ---------------- [盈亏计算函数 (基于虚拟持仓)] ----------------
     def get_long_float_pnl(self):
         """计算多单浮动盈亏 - 风控层使用 LastPrice (盯市盈亏)，避免点差导致的误触风控"""
@@ -226,20 +242,19 @@ class GridStrategy:
                 short_count = len(self.short_pos_prices)
 
                 # ==========================================================
-                # ============= 核心优化：信号触发与记账分离 =================
+                # ============= 核心逻辑：信号触发与记账分离 =================
                 # ==========================================================
 
                 # --- 特殊逻辑 1: 趋势向上，强制补多单 ---
-                # 触发：用 Current (灵敏)；记账：用 Ask (真实)
                 if ma60_prev is not None:
                     ma60_is_up = ma60 > ma60_prev
                     ma3_is_up = ma3_curr > ma3_prev
                     
                     if ma3_is_up and ma60_is_up and current_price > ma3_curr and current_price > ma60:
                         if long_count <= short_count:
-                            print(f"⚡ [虚拟信号] 趋势向上补多单 (Trigger: {current_price}, Cost: {ask_price})")
                             self.long_pos_prices.append(ask_price)
                             long_count += 1 
+                            self._print_snapshot(f"⚡ [虚拟信号] 趋势向上补多单 (Trigger: {current_price}, Cost: {ask_price})")
 
                 # --- 特殊逻辑 2: 趋势向下，强制补空单 ---
                 if ma60_prev is not None:
@@ -248,14 +263,15 @@ class GridStrategy:
 
                     if ma3_is_down and ma60_is_down and current_price < ma3_curr and current_price < ma60:
                         if short_count <= long_count:
-                            print(f"⚡ [虚拟信号] 趋势向下补空单 (Trigger: {current_price}, Cost: {bid_price})")
                             self.short_pos_prices.append(bid_price)
                             short_count += 1
+                            self._print_snapshot(f"⚡ [虚拟信号] 趋势向下补空单 (Trigger: {current_price}, Cost: {bid_price})")
 
                 # --- 3. 标准网格多单逻辑 ---
                 if current_price > ma60 and ma3_curr > ma3_prev and not is_long_banned:
                     if not self.long_pos_prices:
                         self.long_pos_prices.append(ask_price)
+                        self._print_snapshot(f"➕ [虚拟信号] 首单开多 (Trigger: {current_price}, Cost: {ask_price})")
                     elif self.long_pos_prices:
                         last_entry = self.long_pos_prices[-1]
                         idx = len(self.long_pos_prices) - 1
@@ -263,37 +279,33 @@ class GridStrategy:
                         step_ticks = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
                         step = step_ticks * price_tick
                         
-                        # 优化点：判断加仓使用 current_price (保持灵敏度)
                         if (last_entry - current_price) >= step:
-                            print(f"➕ [虚拟信号] 网格加多 (Trigger: {current_price}, Cost: {ask_price})")
                             self.long_pos_prices.append(ask_price)
+                            self._print_snapshot(f"➕ [虚拟信号] 网格加多 (Trigger: {current_price}, Cost: {ask_price})")
                 
                 # --- 多单止盈逻辑 ---
                 if self.long_pos_prices:
                     last_entry = self.long_pos_prices[-1]
                     dynamic_step = current_price * 0.01
                     
-                    # 优化点：判断止盈使用 current_price (保持灵敏度)
-                    # 只要最新价碰到了止盈线，就执行平仓
                     if (current_price - last_entry) >= dynamic_step:
-                        # 记录实际退出的价格是 Bid (真实成交价)
-                        print(f"➖ [虚拟信号] 多单止盈 (Trigger: {current_price}, Sell: {bid_price})")
                         self.last_long_exit_price = bid_price 
                         self.long_pos_prices.pop()
+                        self._print_snapshot(f"➖ [虚拟信号] 多单止盈 (Trigger: {current_price}, Sell: {bid_price})")
 
                 # 多单连续止盈
                 if self.long_pos_prices and self.last_long_exit_price is not None:
                     dynamic_step = current_price * 0.01
-                    # 优化点：判断连续止盈使用 current_price
                     if (current_price - self.last_long_exit_price) >= dynamic_step:
-                        print(f"🚀 [虚拟信号] 多单追踪止盈 (Trigger: {current_price}, Sell: {bid_price})")
                         self.last_long_exit_price = bid_price
                         self.long_pos_prices.pop()
+                        self._print_snapshot(f"🚀 [虚拟信号] 多单追踪止盈 (Trigger: {current_price}, Sell: {bid_price})")
 
                 # --- 4. 标准网格空单逻辑 ---
                 if current_price < ma60 and ma3_curr < ma3_prev and not is_short_banned:
                     if not self.short_pos_prices:
                         self.short_pos_prices.append(bid_price)
+                        self._print_snapshot(f"➕ [虚拟信号] 首单开空 (Trigger: {current_price}, Cost: {bid_price})")
                     elif self.short_pos_prices:
                         last_entry = self.short_pos_prices[-1]
                         idx = len(self.short_pos_prices) - 1
@@ -301,30 +313,27 @@ class GridStrategy:
                         step_ticks = step_cfg[idx] if idx < len(step_cfg) else step_cfg[-1]
                         step = step_ticks * price_tick
                         
-                        # 优化点：判断加仓使用 current_price
                         if (current_price - last_entry) >= step:
-                            print(f"➕ [虚拟信号] 网格加空 (Trigger: {current_price}, Cost: {bid_price})")
                             self.short_pos_prices.append(bid_price)
+                            self._print_snapshot(f"➕ [虚拟信号] 网格加空 (Trigger: {current_price}, Cost: {bid_price})")
 
                 # --- 空单止盈逻辑 ---
                 if self.short_pos_prices:
                     last_entry = self.short_pos_prices[-1]
                     dynamic_step = current_price * 0.01
                     
-                    # 优化点：判断止盈使用 current_price
                     if (last_entry - current_price) >= dynamic_step:
-                        print(f"➖ [虚拟信号] 空单止盈 (Trigger: {current_price}, Buy: {ask_price})")
                         self.last_short_exit_price = ask_price
                         self.short_pos_prices.pop()
+                        self._print_snapshot(f"➖ [虚拟信号] 空单止盈 (Trigger: {current_price}, Buy: {ask_price})")
 
                 # 空单连续止盈
                 if self.short_pos_prices and self.last_short_exit_price is not None:
                     dynamic_step = current_price * 0.01
-                    # 优化点：判断连续止盈使用 current_price
                     if (self.last_short_exit_price - current_price) >= dynamic_step:
-                        print(f"🚀 [虚拟信号] 空单追踪止盈 (Trigger: {current_price}, Buy: {ask_price})")
                         self.last_short_exit_price = ask_price
                         self.short_pos_prices.pop()
+                        self._print_snapshot(f"🚀 [虚拟信号] 空单追踪止盈 (Trigger: {current_price}, Buy: {ask_price})")
 
                 # ==========================================================
                 # ============= 状态同步 ===================================
@@ -349,16 +358,16 @@ if __name__ == "__main__":
         "max_loss_ratio": 0.01
     }
     
-    #SYMBOL = "SHFE.rb2601"
-    #SYMBOL = "DCE.m2601"
-    #SYMBOL = "DCE.v2601"  
-    #SYMBOL = "CZCE.FG601"
-    #SYMBOL = "CZCE.SA601"
-    #SYMBOL = "CZCE.RM601"
-    SYMBOL = "CZCE.TA601"  #收益率: 2.23%, 年化收益率: 8.19%, 最大回撤: 1.19%, 年化夏普率: 1.4430
-    #SYMBOL = "CZCE.SR601"
-    #SYMBOL = "CZCE.SM601"
-    #SYMBOL = "CZCE.MA601"
+    #SYMBOL = "SHFE.rb2601" #收益率: -5.09%, 年化收益率: -17.02%, 最大回撤: 6.30%, 年化夏普率: -4.2021
+    #SYMBOL = "DCE.m2601"   #收益率: 3.45%, 年化收益率: 12.89%, 最大回撤: 18.97%, 年化夏普率: 0.4438
+    #SYMBOL = "DCE.v2601"   #收益率: -0.87%, 年化收益率: -3.07%, 最大回撤: 4.26%, 年化收益率: -3.07%
+    #SYMBOL = "CZCE.FG601"  #收益率: -10.49%, 年化收益率: -32.69%, 最大回撤: 13.31%, 年化夏普率: -1.7583
+    #SYMBOL = "CZCE.SA601"  #收益率: -0.85%, 年化收益率: -3.00%, 最大回撤: 3.83%, 年化夏普率: -0.6946
+    #SYMBOL = "CZCE.RM601"  #收益率: -4.19%, 年化收益率: -14.16%, 最大回撤: 10.71%, 年化夏普率: -0.5254
+    #SYMBOL = "CZCE.TA601"  #收益率: 2.23%, 年化收益率: 8.19%, 最大回撤: 1.19%, 年化夏普率: 1.4430
+    #SYMBOL = "CZCE.SR601"  #收益率: -1.97%, 年化收益率: -6.85%, 最大回撤: 4.12%, 年化夏普率: -1.9474 
+    #SYMBOL = "CZCE.SM601"  #收益率: -3.77%, 年化收益率: -12.99%, 最大回撤: 5.70%, 年化夏普率: -1.8686
+    #SYMBOL = "CZCE.MA601"  #收益率: -9.75%, 年化收益率: -30.67%, 最大回撤: 11.18%, 年化夏普率: -2.2367
 
     # 创建API实例
     api = TqApi(
