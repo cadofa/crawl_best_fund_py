@@ -227,7 +227,7 @@ if __name__ == "__main__":
     
     # 模拟回测设置
     api = TqApi(
-        account=TqSim(init_balance=200000),
+        account=TqSim(init_balance=100000),
         # 建议测试具有明显趋势+震荡的完整周期
         backtest=TqBacktest(start_dt=date(2025, 8, 15), end_dt=date(2025, 11, 29)),
         web_gui=True,
