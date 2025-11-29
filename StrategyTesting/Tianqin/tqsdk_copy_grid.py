@@ -126,7 +126,7 @@ class BaseGridStrategy:
 
 # ==============================================================================
 # 3. 斐波那契做多网格 (Long Strategy)
-#    [修改]: 限制最大持仓 8 手
+#    [修改]: 限制最大真实持仓 4 手
 # ==============================================================================
 class StrategyFiboLong(BaseGridStrategy):
     def __init__(self, api, symbol):
@@ -141,19 +141,24 @@ class StrategyFiboLong(BaseGridStrategy):
         
         # --- 建仓/加仓 ---
         do_buy = False
+        
+        # 获取真实多头持仓量
+        real_pos_long = self.position.pos_long
+
         if not self.pos_list:
             do_buy = True
         else:
             # 回调加仓
             if price < (self.pos_list[-1] - grid_step):
-                # [修改点1] 限制最大判断层数为 8
-                if len(self.pos_list) < 8: 
+                # [修改点1] 使用真实持仓判断是否允许补仓
+                if real_pos_long < 4: 
                     print(f"[Long] 回调补仓, 跌幅 {grid_step:.1f}")
                     do_buy = True
         
         if do_buy:
-            # [修改点2] 硬性检查：如果当前持仓已经达到或超过8手，禁止开仓
-            if len(self.pos_list) >= 8:
+            # [修改点2] 硬性检查：如果当前真实持仓已经达到或超过4手，禁止开仓
+            if self.position.pos_long >= 4:
+                # print(f"[Long] 真实持仓已达 {self.position.pos_long} 手，停止开仓")
                 return
 
             self.api.insert_order(self.symbol, "BUY", "OPEN", 1, self.quote.ask_price1)
@@ -171,7 +176,7 @@ class StrategyFiboLong(BaseGridStrategy):
 
 # ==============================================================================
 # 4. 斐波那契做空网格 (Short Strategy)
-#    [修改]: 限制最大持仓 8 手
+#    [修改]: 限制最大真实持仓 4 手
 # ==============================================================================
 class StrategyFiboShort(BaseGridStrategy):
     def __init__(self, api, symbol):
@@ -186,19 +191,24 @@ class StrategyFiboShort(BaseGridStrategy):
         
         # --- 建仓/加仓 ---
         do_sell = False
+        
+        # 获取真实空头持仓量
+        real_pos_short = self.position.pos_short
+
         if not self.pos_list:
             do_sell = True
         else:
             # 反弹加仓
             if price > (self.pos_list[-1] + grid_step):
-                # [修改点1] 限制最大判断层数为 8
-                if len(self.pos_list) < 8:
+                # [修改点1] 使用真实持仓判断是否允许补仓
+                if real_pos_short < 4:
                     print(f"[Short] 反弹补仓, 涨幅 {grid_step:.1f}")
                     do_sell = True
         
         if do_sell:
-            # [修改点2] 硬性检查：如果当前持仓已经达到或超过8手，禁止开仓
-            if len(self.pos_list) >= 8:
+            # [修改点2] 硬性检查：如果当前真实持仓已经达到或超过4手，禁止开仓
+            if self.position.pos_short >= 4:
+                # print(f"[Short] 真实持仓已达 {self.position.pos_short} 手，停止开仓")
                 return
 
             self.api.insert_order(self.symbol, "SELL", "OPEN", 1, self.quote.bid_price1)
@@ -222,7 +232,7 @@ if __name__ == "__main__":
     
     # 模拟回测设置
     api = TqApi(
-        account=TqSim(init_balance=100000),
+        account=TqSim(init_balance=20000),
         # 建议测试具有明显趋势+震荡的完整周期
         backtest=TqBacktest(start_dt=date(2025, 8, 15), end_dt=date(2025, 11, 29)),
         web_gui=True,
@@ -232,7 +242,7 @@ if __name__ == "__main__":
     
     print(f">>> 策略启动: 斐波那契均线(1H)趋势网格 | 合约: {SYMBOL}")
     print(">>> 均线组: [233, 144, 89, 55, 34, 21]")
-    print(">>> 限制: 单边最大持仓 8 手")
+    print(">>> 限制: 单边最大真实持仓 4 手")
     
     # 初始化模块
     analyzer = FibonacciTrendAnalyzer(api, SYMBOL)
