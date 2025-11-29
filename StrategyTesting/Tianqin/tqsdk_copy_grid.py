@@ -11,8 +11,7 @@ from tqsdk.ta import MA, ATR
 
 # ==============================================================================
 # 1. 斐波那契趋势分析器 (Fibonacci Trend Analyzer)
-#    周期: 1小时 (3600秒)
-#    均线: 233, 144, 89, 55, 34, 21
+#    (逻辑保持不变)
 # ==============================================================================
 class FibonacciTrendAnalyzer:
     def __init__(self, api, symbol):
@@ -21,32 +20,25 @@ class FibonacciTrendAnalyzer:
         self.quote = api.get_quote(symbol)
         
         # 订阅 1小时 K线
-        # 长度设为 300，以确保能计算出 MA233
         self.klines_1h = api.get_kline_serial(symbol, duration_seconds=3600, data_length=300)
         
         # 斐波那契周期
         self.periods = [233, 144, 89, 55, 34, 21]
         
-        # 权重分配 (总分100)
-        # 核心逻辑：大周期决定大方向，给予高权重，防止短期穿插导致的误判
+        # 权重分配
         self.weights = {
-            233: 30,  # 长期趋势 (牛熊分界)
-            144: 20,  # 长期支撑
-            89:  15,  # 中期结构
-            55:  15,  # 中期结构
-            34:  10,  # 短期动能
-            21:  10   # 短期爆发
+            233: 30,
+            144: 20,
+            89:  15,
+            55:  15,
+            34:  10,
+            21:  10
         }
         
-        # 判定阈值：得分绝对值需超过此值才确认趋势
-        # 1小时级别噪音比日线大，适当提高阈值过滤震荡
+        # 判定阈值
         self.threshold = 15
 
     def get_trend(self):
-        """
-        返回: 
-        1 (多头), -1 (空头), 0 (震荡/数据不足)
-        """
         # 数据预热检查
         if self.klines_1h is None or len(self.klines_1h) < 235:
             return 0
@@ -56,23 +48,17 @@ class FibonacciTrendAnalyzer:
 
         total_score = 0
         
-        # 计算每一根均线
         for p in self.periods:
             ma_val = MA(self.klines_1h, p).ma.iloc[-1]
             weight = self.weights[p]
             
             if pd.isna(ma_val): continue
             
-            # 价格在均线之上加分，之下减分
             if current_price > ma_val:
                 total_score += weight
             else:
                 total_score -= weight
         
-        # debug: 打印当前分数便于调试
-        # print(f"Time: {self.klines_1h.iloc[-1].datetime}, Score: {total_score}")
-
-        # 阈值判定
         if total_score > self.threshold:
             return 1
         elif total_score < -self.threshold:
@@ -81,7 +67,7 @@ class FibonacciTrendAnalyzer:
             return 0
 
 # ==============================================================================
-# 2. 基础策略类 (包含 ATR 计算与 均价管理)
+# 2. 基础策略类 (保持不变)
 # ==============================================================================
 class BaseGridStrategy:
     def __init__(self, api, symbol, direction):
@@ -91,7 +77,7 @@ class BaseGridStrategy:
         self.quote = api.get_quote(symbol)
         self.position = api.get_position(symbol)
         
-        # 使用1小时线计算ATR，与趋势周期保持一致
+        # 使用1小时线计算ATR
         self.klines_atr = api.get_kline_serial(symbol, 3600, data_length=50)
         
         self.pos_list = []      # 开仓价格列表
@@ -140,6 +126,7 @@ class BaseGridStrategy:
 
 # ==============================================================================
 # 3. 斐波那契做多网格 (Long Strategy)
+#    [修改]: 限制最大持仓 8 手
 # ==============================================================================
 class StrategyFiboLong(BaseGridStrategy):
     def __init__(self, api, symbol):
@@ -150,7 +137,6 @@ class StrategyFiboLong(BaseGridStrategy):
         if pd.isna(price): return
         
         atr = self.get_atr()
-        # 1小时级别波动较大，网格间距设为 0.6 ATR 比较合适
         grid_step = 0.6 * atr 
         
         # --- 建仓/加仓 ---
@@ -160,11 +146,16 @@ class StrategyFiboLong(BaseGridStrategy):
         else:
             # 回调加仓
             if price < (self.pos_list[-1] - grid_step):
-                if len(self.pos_list) < 10: # 限制最大层数
+                # [修改点1] 限制最大判断层数为 8
+                if len(self.pos_list) < 8: 
                     print(f"[Long] 回调补仓, 跌幅 {grid_step:.1f}")
                     do_buy = True
         
         if do_buy:
+            # [修改点2] 硬性检查：如果当前持仓已经达到或超过8手，禁止开仓
+            if len(self.pos_list) >= 8:
+                return
+
             self.api.insert_order(self.symbol, "BUY", "OPEN", 1, self.quote.ask_price1)
             self.pos_list.append(price)
             self.update_cost()
@@ -172,7 +163,6 @@ class StrategyFiboLong(BaseGridStrategy):
             return
 
         # --- 均价止盈 ---
-        # 目标：均价 + 1.0 ATR
         if self.pos_list and self.avg_cost > 0:
             target = self.avg_cost + 1.0 * atr
             if price > target:
@@ -181,6 +171,7 @@ class StrategyFiboLong(BaseGridStrategy):
 
 # ==============================================================================
 # 4. 斐波那契做空网格 (Short Strategy)
+#    [修改]: 限制最大持仓 8 手
 # ==============================================================================
 class StrategyFiboShort(BaseGridStrategy):
     def __init__(self, api, symbol):
@@ -200,11 +191,16 @@ class StrategyFiboShort(BaseGridStrategy):
         else:
             # 反弹加仓
             if price > (self.pos_list[-1] + grid_step):
-                if len(self.pos_list) < 10:
+                # [修改点1] 限制最大判断层数为 8
+                if len(self.pos_list) < 8:
                     print(f"[Short] 反弹补仓, 涨幅 {grid_step:.1f}")
                     do_sell = True
         
         if do_sell:
+            # [修改点2] 硬性检查：如果当前持仓已经达到或超过8手，禁止开仓
+            if len(self.pos_list) >= 8:
+                return
+
             self.api.insert_order(self.symbol, "SELL", "OPEN", 1, self.quote.bid_price1)
             self.pos_list.append(price)
             self.update_cost()
@@ -212,7 +208,6 @@ class StrategyFiboShort(BaseGridStrategy):
             return
 
         # --- 均价止盈 ---
-        # 目标：均价 - 1.0 ATR
         if self.pos_list and self.avg_cost > 0:
             target = self.avg_cost - 1.0 * atr
             if price < target:
@@ -237,6 +232,7 @@ if __name__ == "__main__":
     
     print(f">>> 策略启动: 斐波那契均线(1H)趋势网格 | 合约: {SYMBOL}")
     print(">>> 均线组: [233, 144, 89, 55, 34, 21]")
+    print(">>> 限制: 单边最大持仓 8 手")
     
     # 初始化模块
     analyzer = FibonacciTrendAnalyzer(api, SYMBOL)
@@ -272,9 +268,6 @@ if __name__ == "__main__":
             elif current_trend == -1:
                 stg_short.on_tick()
             else:
-                # 震荡期/均线纠缠期:
-                # 保持现有持仓不动，或者可以选择清仓观望。
-                # 此处选择保持不动，等待方向明确。
                 pass
 
     except KeyboardInterrupt:
