@@ -1,359 +1,255 @@
-# encoding: UTF-8
-
-import os
-import json
-import math
+from tqsdk import TqApi, TqAuth, TargetPosTask, TqSim, TqBacktest
+from tqsdk.ta import ATR
+from datetime import date
 import pandas as pd
 import numpy as np
-from datetime import date
-from tqsdk import TqApi, TqAuth, TqSim, TqBacktest
-from tqsdk.ta import MA, ATR
 
-# ==============================================================================
-# 1. 斐波那契趋势分析器 (保持不变)
-# ==============================================================================
-class FibonacciTrendAnalyzer:
-    def __init__(self, api, symbol):
-        self.api = api
-        self.symbol = symbol
-        self.quote = api.get_quote(symbol)
+# ================= 配置区域 =================
+SYMBOL = "SHFE.rb2601"   # 合约代码
+# 斐波那契周期权重配置
+WEIGHTS = {
+    3: 0.10,
+    5: 0.15,
+    8: 0.15,
+    13: 0.15,
+    21: 0.20,
+    34: 0.25
+}
+
+# 阈值配置
+OPEN_THRESHOLD = 0.6 
+VOL = 1               
+ATR_MULTIPLIER = 1.0  
+
+# ================= 核心工具函数 =================
+
+def to_scalar(val):
+    """
+    通用辅助函数：将 Series/Numpy/List 类型的单值强制转换为 python float
+    """
+    try:
+        # 如果是 Pandas Series，取第一个值
+        if isinstance(val, pd.Series):
+            if val.empty: return 0.0
+            val = val.iloc[0]
         
-        self.klines_1h = api.get_kline_serial(symbol, duration_seconds=3600, data_length=300)
-        self.periods = [233, 144, 89, 55, 34, 21]
-        self.weights = {233: 30, 144: 20, 89: 15, 55: 15, 34: 10, 21: 10}
-        self.threshold = 15
-
-    def get_trend(self):
-        if self.klines_1h is None or len(self.klines_1h) < 235:
-            return 0
-        current_price = self.quote.last_price
-        if pd.isna(current_price): return 0
-
-        total_score = 0
-        for p in self.periods:
-            ma_val = MA(self.klines_1h, p).ma.iloc[-1]
-            if pd.isna(ma_val): continue
-            if current_price > ma_val: total_score += self.weights[p]
-            else: total_score -= self.weights[p]
-        
-        if total_score > self.threshold: return 1
-        elif total_score < -self.threshold: return -1
-        else: return 0
-
-# ==============================================================================
-# 2. 基础策略类 (增加移动止盈保护逻辑)
-# ==============================================================================
-class BaseGridStrategy:
-    def __init__(self, api, symbol, direction):
-        self.api = api
-        self.symbol = symbol
-        self.direction = direction 
-        self.quote = api.get_quote(symbol)
-        self.position = api.get_position(symbol)
-        self.account = api.get_account()
-        
-        self.klines_atr = api.get_kline_serial(symbol, 3600, data_length=50)
-        
-        self.pos_list = []      
-        self.avg_cost = 0.0     
-        
-        # [优化] 增加最高/最低价记录，用于移动止盈
-        self.highest_price = 0.0 # 多单持仓期间最高价
-        self.lowest_price = 0.0  # 空单持仓期间最低价
-        
-        safe_sym = symbol.replace('.', '_')
-        self.file_path = f"Fibo_{direction}_{safe_sym}.json"
-        self._load()
-
-    def get_atr(self):
-        atr = ATR(self.klines_atr, 20).atr.iloc[-1]
-        return 30.0 if (pd.isna(atr) or atr == 0) else atr
-
-    def update_cost(self):
-        if not self.pos_list: 
-            self.avg_cost = 0.0
-            self.highest_price = 0.0
-            self.lowest_price = float('inf')
-        else: 
-            self.avg_cost = sum(self.pos_list) / len(self.pos_list)
-            # 开仓/加仓时重置极值，避免旧数据干扰
-            if self.direction == "LONG":
-                self.highest_price = self.quote.last_price
-            else:
-                self.lowest_price = self.quote.last_price
-
-    def _load(self):
-        if os.path.exists(self.file_path):
-            try:
-                with open(self.file_path, "r") as f:
-                    self.pos_list = json.load(f)
-                    self.update_cost()
-            except: pass
-
-    def _save(self):
-        with open(self.file_path, "w") as f:
-            json.dump(self.pos_list, f)
-
-    # --- 风控检查 ---
-    def check_risk(self, price):
-        balance = self.account.balance
-        current_margin = self.account.margin
-        if balance <= 0: return False
-
-        one_lot_margin = self.quote.margin
-        if math.isnan(one_lot_margin) or one_lot_margin == 0:
-            volume_multiple = self.quote.volume_multiple
-            if math.isnan(volume_multiple) or volume_multiple == 0: volume_multiple = 10 
-            one_lot_margin = price * volume_multiple * 0.13
-
-        risk_ratio = (current_margin + one_lot_margin) / balance
-        if risk_ratio > 0.35:
-            if len(self.pos_list) > 0:
-                print(f"[{self.direction}] 风控拦截! 预计风险: {risk_ratio*100:.2f}%")
-            return False
-        return True
-
-    # --- [核心优化] 移动止盈与硬止损检查 ---
-    def check_trailing_and_stop(self, price):
-        if not self.pos_list or self.avg_cost == 0: return False
-        
-        atr = self.get_atr()
-        
-        # 1. 硬止损 (防止亏损无限扩大)
-        # [优化] 保持 2.5 ATR 不变，这是最后的防线
-        HARD_STOP = 2.5 * atr
-        
-        # 2. 移动止盈参数
-        # 当盈利超过 ACTIVATION_LEVEL (1.0 ATR) 时，启动保护
-        # 如果回撤超过 CALLBACK (0.4 ATR)，则止盈
-        ACTIVATION_LEVEL = 1.0 * atr 
-        CALLBACK = 0.4 * atr
-
-        if self.direction == "LONG":
-            # 更新最高价
-            self.highest_price = max(self.highest_price, price)
+        # 如果是 Numpy 类型，取 item
+        if hasattr(val, "item"):
+            val = val.item()
             
-            # A. 硬止损
-            if price < (self.avg_cost - HARD_STOP):
-                print(f"[Long] 🛑 硬止损触发: 现价{price} < 均价{self.avg_cost:.1f}-2.5ATR")
-                self.close_all(force=True)
-                return True
-                
-            # B. 移动止盈
-            profit = self.highest_price - self.avg_cost
-            if profit > ACTIVATION_LEVEL:
-                # 如果从最高点回撤超过回调阈值
-                if price < (self.highest_price - CALLBACK):
-                    print(f"[Long] 🛡️ 移动止盈: 最高{self.highest_price} 回撤 > {CALLBACK:.1f}")
-                    self.close_all(force=False)
-                    return True
+        return float(val)
+    except:
+        return 0.0
 
-        else: # SHORT
-            # 更新最低价
-            self.lowest_price = min(self.lowest_price, price)
-            
-            # A. 硬止损
-            if price > (self.avg_cost + HARD_STOP):
-                print(f"[Short] 🛑 硬止损触发: 现价{price} > 均价{self.avg_cost:.1f}+2.5ATR")
-                self.close_all(force=True)
-                return True
-            
-            # B. 移动止盈
-            profit = self.avg_cost - self.lowest_price
-            if profit > ACTIVATION_LEVEL:
-                if price > (self.lowest_price + CALLBACK):
-                    print(f"[Short] 🛡️ 移动止盈: 最低{self.lowest_price} 反弹 > {CALLBACK:.1f}")
-                    self.close_all(force=False)
-                    return True
-                    
-        return False
-
-    def close_all(self, force=False):
-        """平仓逻辑 (SHFE修复版)"""
-        vol = self.position.pos_long if self.direction == "LONG" else self.position.pos_short
-        if vol > 0:
-            msg = "趋势反转/止损" if force else "止盈出场"
-            print(f"[{self.direction}] {msg} | 手数: {vol} | 均价: {self.avg_cost:.1f}")
-            
-            dir_order = "SELL" if self.direction == "LONG" else "BUY"
-            price = self.quote.bid_price1 if self.direction == "LONG" else self.quote.ask_price1
-            
-            exchange = self.symbol.split('.')[0]
-            if exchange in ["SHFE", "INE"]:
-                if self.direction == "LONG":
-                    his_vol = self.position.pos_long_his
-                else:
-                    his_vol = self.position.pos_short_his
-                
-                close_his = min(vol, his_vol)
-                close_today = vol - close_his
-                if close_his > 0:
-                    self.api.insert_order(self.symbol, dir_order, "CLOSE", close_his, price)
-                if close_today > 0:
-                    self.api.insert_order(self.symbol, dir_order, "CLOSETODAY", close_today, price)
-            else:
-                self.api.insert_order(self.symbol, dir_order, "CLOSE", vol, price)
-            
-        self.pos_list = []
-        self.avg_cost = 0.0
-        self.highest_price = 0.0
-        self.lowest_price = float('inf')
-        self._save()
-
-# ==============================================================================
-# 3. 斐波那契做多网格 (Long Strategy)
-# ==============================================================================
-class StrategyFiboLong(BaseGridStrategy):
-    def __init__(self, api, symbol):
-        super().__init__(api, symbol, "LONG")
-        
-    def on_tick(self):
-        price = self.quote.last_price
-        if pd.isna(price): return
-        
-        # 1. 优先检查止损/移动止盈
-        if self.check_trailing_and_stop(price):
-            return
-        
-        atr = self.get_atr()
-        
-        # [优化] 扩大网格间距，减少在震荡中频繁加仓
-        # 从 0.6 ATR 增加到 1.2 ATR
-        grid_step = 1.2 * atr 
-        
-        # --- 建仓/加仓 ---
-        do_buy = False
-        real_pos_long = self.position.pos_long
-
-        if not self.pos_list:
-            if real_pos_long == 0: do_buy = True
-            else:
-                self.pos_list.append(price)
-                self.update_cost()
-        else:
-            if price < (self.pos_list[-1] - grid_step):
-                # 限制最大持仓4手
-                if real_pos_long < 4: 
-                    do_buy = True
-        
-        if do_buy:
-            if self.position.pos_long >= 4: return
-            if self.check_risk(price):
-                self.api.insert_order(self.symbol, "BUY", "OPEN", 1, self.quote.ask_price1)
-                self.pos_list.append(price)
-                self.update_cost()
-                self._save()
-                print(f"[Long] 开仓/补仓 | 价格:{price} | 间距:{grid_step:.1f}")
-            return
-
-        # --- 基础均价止盈 ---
-        # [优化] 提高基础止盈目标，改善盈亏比
-        # 目标：均价 + 1.6 ATR (原 1.0)
-        if self.pos_list and self.avg_cost > 0:
-            target = self.avg_cost + 1.6 * atr
-            if price > target:
-                print(f"[Long] 🎯 目标止盈, 现价{price} > 目标{target:.1f}")
-                self.close_all(force=False)
-
-# ==============================================================================
-# 4. 斐波那契做空网格 (Short Strategy)
-# ==============================================================================
-class StrategyFiboShort(BaseGridStrategy):
-    def __init__(self, api, symbol):
-        super().__init__(api, symbol, "SHORT")
-        
-    def on_tick(self):
-        price = self.quote.last_price
-        if pd.isna(price): return
-        
-        # 1. 优先检查止损/移动止盈
-        if self.check_trailing_and_stop(price):
-            return
-        
-        atr = self.get_atr()
-        # [优化] 扩大网格间距
-        grid_step = 1.2 * atr
-        
-        # --- 建仓/加仓 ---
-        do_sell = False
-        real_pos_short = self.position.pos_short
-
-        if not self.pos_list:
-            if real_pos_short == 0: do_sell = True
-            else:
-                self.pos_list.append(price)
-                self.update_cost()
-        else:
-            if price > (self.pos_list[-1] + grid_step):
-                if real_pos_short < 4:
-                    do_sell = True
-        
-        if do_sell:
-            if self.position.pos_short >= 4: return
-            if self.check_risk(price):
-                self.api.insert_order(self.symbol, "SELL", "OPEN", 1, self.quote.bid_price1)
-                self.pos_list.append(price)
-                self.update_cost()
-                self._save()
-                print(f"[Short] 开仓/补仓 | 价格:{price} | 间距:{grid_step:.1f}")
-            return
-
-        # --- 基础均价止盈 ---
-        # [优化] 提高基础止盈目标
-        if self.pos_list and self.avg_cost > 0:
-            target = self.avg_cost - 1.6 * atr
-            if price < target:
-                print(f"[Short] 🎯 目标止盈, 现价{price} < 目标{target:.1f}")
-                self.close_all(force=False)
-
-# ==============================================================================
-# 5. 主程序入口
-# ==============================================================================
-if __name__ == "__main__":
-    SYMBOL = "SHFE.rb2601"
+def resample_klines(df_daily, days):
+    """
+    将日线数据重采样为 N日线数据
+    修复点：使用 to_scalar 确保提取的是纯数字
+    """
+    if len(df_daily) < days:
+        return None
     
+    # 取最近N天的数据
+    recent_df = df_daily.iloc[-days:]
+    
+    if recent_df.empty:
+        return None
+
+    # 合成逻辑
+    try:
+        n_day_bar = {
+            'open': to_scalar(recent_df.iloc[0]['open']),
+            'high': to_scalar(recent_df['high'].max()),
+            'low': to_scalar(recent_df['low'].min()),
+            'close': to_scalar(recent_df.iloc[-1]['close']),
+            'days': days
+        }
+        return n_day_bar
+    except Exception as e:
+        print(f"数据合成出错: {e}")
+        return None
+
+def calculate_price_action_score(bar_data):
+    """
+    基于量化价格行为(Price Action)的评分模型
+    """
+    if bar_data is None:
+        return 0
+    
+    o, h, l, c = bar_data['open'], bar_data['high'], bar_data['low'], bar_data['close']
+    
+    total_range = h - l
+    
+    if total_range <= 0:
+        return 0
+    
+    # --- 1. 实体动能 ---
+    body_score = (c - o) / total_range
+    
+    # --- 2. 影线博弈 ---
+    upper_shadow = h - max(o, c)
+    lower_shadow = min(o, c) - l
+    wick_score = (lower_shadow - upper_shadow) / total_range
+    
+    # --- 3. 收盘位置 ---
+    position_ratio = (c - l) / total_range
+    position_score = (position_ratio - 0.5) * 2
+    
+    # --- 4. 综合加权 ---
+    final_score = (0.5 * body_score) + (0.3 * position_score) + (0.2 * wick_score)
+    
+    return max(min(final_score, 1.0), -1.0)
+
+def analyze_morphology(bar_data):
+    return calculate_price_action_score(bar_data)
+
+def get_current_atr(klines, period=14):
+    """
+    获取最新ATR
+    修复点：严格处理 Series 类型歧义
+    """
+    atr_serial = ATR(klines, period)
+    if len(atr_serial) == 0:
+        return 0.0
+    
+    # 获取最后一个值
+    val = atr_serial.iloc[-1]
+    
+    # 转换为标量
+    scalar_val = to_scalar(val)
+    
+    # 检查 NaN
+    if np.isnan(scalar_val):
+        return 0.0
+        
+    return scalar_val
+
+# ================= 主程序逻辑 =================
+
+try:
+    # 初始化API
     api = TqApi(
-        account=TqSim(init_balance=50000),
+        account=TqSim(init_balance=20000),
         backtest=TqBacktest(start_dt=date(2025, 8, 15), end_dt=date(2025, 11, 29)),
         web_gui=True,
-        auth=TqAuth("cadofa", "cadofa6688"), 
+        auth=TqAuth("cadofa", "cadofa6688"), # 请替换为真实的 TQ_USER, TQ_PASS
         debug=False
     )
-    
-    print(f">>> 策略启动: 斐波那契网格 Pro | 合约: {SYMBOL}")
-    print(">>> 优化: 间距1.2ATR | 止盈1.6ATR | 增加移动止盈保护 | 限仓4手")
-    
-    analyzer = FibonacciTrendAnalyzer(api, SYMBOL)
-    stg_long = StrategyFiboLong(api, SYMBOL)
-    stg_short = StrategyFiboShort(api, SYMBOL)
-    
-    current_trend = 0 
-    
-    try:
-        while api.wait_update():
-            new_trend = analyzer.get_trend()
-            
-            if new_trend != 0 and new_trend != current_trend:
-                print(f"\n======== [趋势切换] {current_trend} -> {new_trend} ========")
-                
-                if new_trend == 1:
-                    print(">>> 判定: 多头排列")
-                    stg_short.close_all(force=True)
-                
-                elif new_trend == -1:
-                    print(">>> 判定: 空头排列")
-                    stg_long.close_all(force=True)
-                    
-                current_trend = new_trend
-            
-            if current_trend == 1:
-                stg_long.on_tick()
-            elif current_trend == -1:
-                stg_short.on_tick()
-            else:
-                pass
+    print(f"策略已启动，监控合约: {SYMBOL}")
+    print("正在预加载数据...")
 
-    except KeyboardInterrupt:
-        print("停止策略")
-    finally:
-        api.close()
+    # 获取日线数据
+    klines = api.get_kline_serial(SYMBOL, 24 * 60 * 60, data_length=200)
+    quote = api.get_quote(SYMBOL)
+    target_pos = TargetPosTask(api, SYMBOL)
+
+    # 交易状态变量
+    position_state = 0  
+    extreme_price = 0.0 
+    entry_atr = 0.0     
+
+    while True:
+        api.wait_update()
+
+        # -----------------------------------------------------
+        # 1. 信号判定逻辑
+        # -----------------------------------------------------
+        if api.is_changing(klines.iloc[-1], "datetime"):
+            # 确保 datetime 存在再打印
+            dt_val = klines.iloc[-1]['datetime']
+            if np.isnan(dt_val):
+                continue
+            
+            print(f"\n====== 新日线生成: {pd.to_datetime(dt_val, unit='ns').date()} ======")
+            
+            # 直接引用 DataFrame
+            df = klines 
+            
+            total_weighted_score = 0
+            
+            print("周期分析详情:")
+            for days, weight in WEIGHTS.items():
+                # 1. 动态合成N日K线
+                n_bar = resample_klines(df, days)
+                
+                # 2. 调用核心算法评分
+                score = analyze_morphology(n_bar)
+                
+                # 3. 加权累加
+                weighted_val = score * weight
+                total_weighted_score += weighted_val
+                
+                sentiment = "看涨" if score > 0.1 else ("看跌" if score < -0.1 else "震荡")
+                print(f"  [{days:02d}日线] 形态分: {score:+.2f} | 权重贡献: {weighted_val:+.2f} ({sentiment})")
+            
+            print(f"  >>> 综合预测总分: {total_weighted_score:+.2f} (阈值: +/-{OPEN_THRESHOLD})")
+            
+            current_atr = get_current_atr(klines)
+            # 如果回测初期 ATR 为 0 或 NaN，给个默认保护值（例如当前价格的1%）
+            if current_atr <= 0: 
+                current_atr = to_scalar(quote.last_price) * 0.01 
+            
+            # --- 开仓/反手逻辑 ---
+            if total_weighted_score > OPEN_THRESHOLD:
+                if position_state != 1:
+                    print(f"  [交易指令] 强力看涨信号 -> 开多单 (目标ATR: {current_atr:.1f})")
+                    target_pos.set_target_volume(VOL)
+                    position_state = 1
+                    extreme_price = to_scalar(quote.last_price)
+                    entry_atr = current_atr
+                else:
+                    print("  [持仓] 多单持有中，趋势延续")
+
+            elif total_weighted_score < -OPEN_THRESHOLD:
+                if position_state != -1:
+                    print(f"  [交易指令] 强力看跌信号 -> 开空单 (目标ATR: {current_atr:.1f})")
+                    target_pos.set_target_volume(-VOL)
+                    position_state = -1
+                    extreme_price = to_scalar(quote.last_price)
+                    entry_atr = current_atr
+                else:
+                    print("  [持仓] 空单持有中，趋势延续")
+            
+            else:
+                print("  [信号] 震荡区间，无新开仓信号")
+
+        # -----------------------------------------------------
+        # 2. 盘中风控
+        # -----------------------------------------------------
+        if position_state != 0:
+            last_price = to_scalar(quote.last_price)
+            
+            # 如果价格无效（如NaN），跳过本次风控
+            if np.isnan(last_price) or last_price == 0:
+                continue
+                
+            stop_gap = ATR_MULTIPLIER * entry_atr
+            
+            if position_state == 1: # 多单
+                if last_price > extreme_price:
+                    extreme_price = last_price
+                
+                stop_price = extreme_price - stop_gap
+                
+                if last_price <= stop_price:
+                    print(f"[风控触发] 多单平仓 | 现价:{last_price} <= 止损线:{stop_price:.1f} (最高:{extreme_price})")
+                    target_pos.set_target_volume(0)
+                    position_state = 0
+            
+            elif position_state == -1: # 空单
+                if last_price < extreme_price:
+                    extreme_price = last_price
+                
+                stop_price = extreme_price + stop_gap
+                
+                if last_price >= stop_price:
+                    print(f"[风控触发] 空单平仓 | 现价:{last_price} >= 止损线:{stop_price:.1f} (最低:{extreme_price})")
+                    target_pos.set_target_volume(0)
+                    position_state = 0
+
+except Exception as e:
+    import traceback
+    print("策略异常退出:")
+    traceback.print_exc()
+finally:
+    api.close()
