@@ -15,7 +15,7 @@ TQ_PASS = "cadofa6688"
 SYMBOL = "SHFE.rb2601"          # 标的
 START_DT = date(2025, 8, 1)     # 回测开始时间
 END_DT = date(2025, 11, 29)     # 回测结束时间
-ATR_WINDOW = 20                 # ATR周期
+ATR_WINDOW = 13                 # ATR周期
 VOL = 1                         # 下单手数
 
 def get_atr(df, n):
@@ -34,6 +34,10 @@ def get_cog(df):
     df['cog'] = (3 * df['close'] + 2 * df['open'] + df['high'] + df['low']) / 7
     return df
 
+def log_separator():
+    """打印分隔符"""
+    print("\n" + "=" * 60 + "\n")
+
 def run_backtest():
     try:
         api = TqApi(
@@ -50,39 +54,41 @@ def run_backtest():
     print(f"回测区间: {START_DT} -> {END_DT}")
     print("正在预加载历史数据以确保首日即可交易...")
 
-    # 预加载数据，确保8月1日有足够的历史数据计算指标
+    # 预加载数据
     klines = api.get_kline_serial(SYMBOL, 24 * 60 * 60, data_length=100)
     
     target_pos = TargetPosTask(api, SYMBOL)
     quote = api.get_quote(SYMBOL)
     account = api.get_account()
-    
-    # 【修复点1】获取持仓对象引用
     position = api.get_position(SYMBOL)
 
+    # 策略状态变量
     stop_loss_price = 0.0
     take_profit_price = 0.0
+    entry_price = 0.0           # 记录开仓价格(成本价)
     has_stopped_out_today = False 
+    is_breakeven_set = False    # 标记是否已触发保本
 
     try:
         while True:
             api.wait_update()
 
-            # 1. 每日开盘信号逻辑
+            # -----------------------------------------------------------------
+            # 1. 每日开盘信号逻辑 (COG反转策略)
+            # -----------------------------------------------------------------
             if api.is_changing(klines.iloc[-1], "datetime"):
                 current_k_time = klines.iloc[-1].datetime
                 current_k_str = pd.to_datetime(current_k_time, unit='ns')
                 
                 # 重置日内风控标志
                 has_stopped_out_today = False
+                is_breakeven_set = False
                 
                 df = klines.copy()
                 df = get_atr(df, ATR_WINDOW)
                 df = get_cog(df)
 
-                # 检查昨天的ATR是否计算完成
                 if np.isnan(df['atr'].iloc[-2]):
-                    print(f"[{current_k_str}] 历史数据不足，跳过...")
                     continue
 
                 cog_yesterday = df['cog'].iloc[-2]
@@ -90,48 +96,103 @@ def run_backtest():
                 atr_val = df['atr'].iloc[-2]
                 current_open = df['open'].iloc[-1]
 
-                print(f"[{current_k_str}] 开盘:{current_open} | ATR:{atr_val:.1f} | 昨COG:{cog_yesterday:.2f} vs 前COG:{cog_before:.2f}")
+                # 更新入场价
+                entry_price = current_open
 
-                # 交易逻辑
+                # 交易逻辑：COG下降做空，COG上升做多
                 if cog_yesterday < cog_before:
                     target_pos.set_target_volume(-VOL)
-                    stop_loss_price = current_open + 1.0 * atr_val
-                    take_profit_price = current_open - 2.0 * atr_val
-                    print(f"  >>> 信号触发: 做空 (止损:{stop_loss_price:.1f}, 止盈:{take_profit_price:.1f})")
+                    # 【优化1】初始止损扩大到 1.5 ATR
+                    stop_loss_price = current_open + 1.5 * atr_val
+                    take_profit_price = current_open - 3.0 * atr_val # 配合宽止损，适当放大止盈
+                    
+                    log_separator()
+                    print(f"【交易信号】时间: {current_k_str}")
+                    print(f"  动作: 开空/持有空单 (SHORT)")
+                    print(f"  价格: {current_open}")
+                    print(f"  止损: {stop_loss_price:.1f} (1.5 ATR)")
+                    print(f"  止盈: {take_profit_price:.1f}")
+                    
                 else:
                     target_pos.set_target_volume(VOL)
-                    stop_loss_price = current_open - 1.0 * atr_val
-                    take_profit_price = current_open + 2.0 * atr_val
-                    print(f"  >>> 信号触发: 做多 (止损:{stop_loss_price:.1f}, 止盈:{take_profit_price:.1f})")
+                    # 【优化1】初始止损扩大到 1.5 ATR
+                    stop_loss_price = current_open - 1.5 * atr_val
+                    take_profit_price = current_open + 3.0 * atr_val
+                    
+                    log_separator()
+                    print(f"【交易信号】时间: {current_k_str}")
+                    print(f"  动作: 开多/持有多单 (LONG)")
+                    print(f"  价格: {current_open}")
+                    print(f"  止损: {stop_loss_price:.1f} (1.5 ATR)")
+                    print(f"  止盈: {take_profit_price:.1f}")
 
+            # -----------------------------------------------------------------
             # 2. 盘中实时风控
-            # 【修复点2】使用 position.pos 判断当前实际持仓
-            # position.pos > 0 表示多单，< 0 表示空单，0 表示无持仓
+            # -----------------------------------------------------------------
             if position.pos != 0 and not has_stopped_out_today:
                 current_price = quote.last_price
-                current_vol = position.pos # 获取当前实际净持仓手数
+                current_vol = position.pos 
 
                 if current_price and current_price > 0:
-                    # 多单风控
+                    
+                    # === 多单风控 ===
                     if current_vol > 0:
+                        # 1. 硬止损 / 保本止损触发
                         if current_price <= stop_loss_price:
-                            print(f"  [多单止损] 价格 {current_price} 触及止损线 {stop_loss_price:.1f}")
                             target_pos.set_target_volume(0)
                             has_stopped_out_today = True
+                            
+                            log_separator()
+                            print(f"【平仓信号】触发多单止损/保本")
+                            print(f"  成交价格: {current_price}")
+                            print(f"  设定止损: {stop_loss_price:.1f}")
+                            print(f"  账户权益: {account.balance:.2f}")
+                            
+                        # 2. 硬止盈
                         elif current_price >= take_profit_price:
-                            print(f"  [多单止盈] 价格 {current_price} 触及止盈线 {take_profit_price:.1f}")
                             target_pos.set_target_volume(0)
                             has_stopped_out_today = True
-                    # 空单风控
+                            
+                            log_separator()
+                            print(f"【平仓信号】触发多单止盈")
+                            print(f"  成交价格: {current_price}")
+                            print(f"  账户权益: {account.balance:.2f}")
+                        
+                        # 【优化2】保本策略：浮盈 > 0.5 ATR，止损上移至成本价
+                        elif not is_breakeven_set and (current_price - entry_price) > (0.5 * atr_val):
+                            stop_loss_price = entry_price + 1 # 加1跳防止手续费亏损
+                            is_breakeven_set = True
+                            # 仅供调试，不想刷屏可注释
+                            # print(f"  >>> [动态风控] 多单浮盈达标，止损上移至保本位: {stop_loss_price}")
+
+                    # === 空单风控 ===
                     elif current_vol < 0:
+                        # 1. 硬止损 / 保本止损触发
                         if current_price >= stop_loss_price:
-                            print(f"  [空单止损] 价格 {current_price} 触及止损线 {stop_loss_price:.1f}")
                             target_pos.set_target_volume(0)
                             has_stopped_out_today = True
+                            
+                            log_separator()
+                            print(f"【平仓信号】触发空单止损/保本")
+                            print(f"  成交价格: {current_price}")
+                            print(f"  设定止损: {stop_loss_price:.1f}")
+                            print(f"  账户权益: {account.balance:.2f}")
+                            
+                        # 2. 硬止盈
                         elif current_price <= take_profit_price:
-                            print(f"  [空单止盈] 价格 {current_price} 触及止盈线 {take_profit_price:.1f}")
                             target_pos.set_target_volume(0)
                             has_stopped_out_today = True
+                            
+                            log_separator()
+                            print(f"【平仓信号】触发空单止盈")
+                            print(f"  成交价格: {current_price}")
+                            print(f"  账户权益: {account.balance:.2f}")
+                        
+                        # 【优化2】保本策略：浮盈 > 0.5 ATR，止损下移至成本价
+                        elif not is_breakeven_set and (entry_price - current_price) > (0.5 * atr_val):
+                            stop_loss_price = entry_price - 1 # 减1跳防止手续费亏损
+                            is_breakeven_set = True
+                            # print(f"  >>> [动态风控] 空单浮盈达标，止损下移至保本位: {stop_loss_price}")
 
     except Exception as e:
         print(f"\n程序运行结束: {e}")
