@@ -133,14 +133,11 @@ def run_backtest():
                             target_pos.set_target_volume(0)
                             has_stopped_out_today = True
 
-    except BacktestFinished:
-        print("=" * 30)
-        print("回测结束")
-        print(f"账户权益: {account.balance:.2f}")
-        print("请查看浏览器中的回测报告")
-        print("=" * 30)
-        while True:
-            api.wait_update()
+    except Exception as e:
+        print(f"\n程序运行结束: {e}")
+    finally:
+        if 'strategy' in locals():
+            strategy.on_stop()
 
 if __name__ == "__main__":
     run_backtest()
