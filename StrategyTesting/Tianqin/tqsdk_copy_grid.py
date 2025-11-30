@@ -193,10 +193,21 @@ def run_backtest():
                             stop_loss_price = entry_price - 1 # 减1跳防止手续费亏损
                             is_breakeven_set = True
                             # print(f"  >>> [动态风控] 空单浮盈达标，止损下移至保本位: {stop_loss_price}")
-
+    except BacktestFinished:
+        print("\n" + "=" * 30)
+        print("回测结束 (Backtest Finished)")
+        print(f"最终账户权益: {account.balance:.2f}")
+        print("请在浏览器中查看回测报告，按 Ctrl+C 退出程序...")
+        print("=" * 30)
+        # 死循环挂起程序，保持 API 和 Web Server 存活
+        while True:
+            api.wait_update()
+            
     except Exception as e:
         print(f"\n程序运行结束: {e}")
     finally:
+        # 这里原来的 strategy 变量是不存在的，为避免报错可以去掉或者加判断
+        # api.close() # 注意：如果希望保持GUI打开，不要在这里立即close
         if 'strategy' in locals():
             strategy.on_stop()
 
