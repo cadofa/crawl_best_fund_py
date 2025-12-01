@@ -251,13 +251,13 @@ class GrabTopTouchBom_TqSdk:
 
 if __name__ == "__main__":
     # 示例：现在切换合约会自动生成不同的文件
-    SYMBOL = "CZCE.MA601"
+    SYMBOL = "DCE.m2601"
     #SYMBOL = "DCE.m2601"
     #SYMBOL = "SHFE.rb2601" 
     
     try:
         api = TqApi(
-            account=TqSim(init_balance=20000),
+            account=TqSim(init_balance=100000),
             backtest=TqBacktest(start_dt=date(2025, 8, 1), end_dt=date(2025, 11, 29)),
             web_gui=True,
             auth=TqAuth("cadofa", "cadofa6688"),

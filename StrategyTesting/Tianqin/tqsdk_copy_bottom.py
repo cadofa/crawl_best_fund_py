@@ -3,237 +3,272 @@
 import os
 import json
 import time
-from datetime import datetime
 from datetime import date
+import pandas as pd
+
 from tqsdk import TqApi, TqAuth, TqSim, TqBacktest
-from tqsdk.ta import MA
-import math
 
-class TrendStepGridStrategy:
-    """
-    趋势步长网格策略 (TrendStepGridStrategy)
-    """
-    
-    def __init__(self, api):
+class GrabBottomTouchTop_TqSdk:
+    def __init__(self, api, symbol):
         self.api = api
-        # 交易合约
-        self.symbol = "SHFE.rb2601" 
+        self.symbol = symbol
         
-        # 摸顶(止盈)基础步长
+        # 策略参数
         self.touch_top_step = 6
+        self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+        self.min_long_position = 1
         
-        # 抄底(加仓)步长列表: 随着持仓增加，加仓间距拉大
-        self.copy_bottom_step = [5, 6, 8, 10, 13, 15, 18, 21, 34, 55, 89, 55, 34, 21, 18, 15, 13, 10]
+        # 均线参数: 1分钟K线，60周期
+        self.ma_length = 60
         
-        self.position_list = []   # 持仓价格列表
-        self.operation_stack = [] # 操作记录栈
-        self.pending_order = None # 挂单锁
+        # 策略状态
+        self.position_list = [] 
+        self.operation_stack = []
+        self.current_order = None 
         
-        # 均线周期
-        self.QUEUE_LENGTH = 60
-        
-        # TqSdk 数据对象
+        # 数据对象
         self.quote = self.api.get_quote(self.symbol)
+        self.klines = self.api.get_kline_serial(self.symbol, duration_seconds=60, data_length=self.ma_length+20)
         self.position = self.api.get_position(self.symbol)
-        self.klines = self.api.get_kline_serial(self.symbol, duration_seconds=60, data_length=100)
+        
+        # --- [修改核心] 文件路径与合约绑定 ---
+        # 将合约中的特殊字符替换为下划线，例如 "KQ.m@CZCE.FG" -> "KQ_m_CZCE_FG"
+        safe_symbol = self.symbol.replace('.', '_').replace('@', '_')
+        
+        # 文件名包含合约代码，实现不同合约数据隔离
+        self.base_name = f"Tq_GrabBottom_{safe_symbol}"
+        self.pos_file = f"{self.base_name}_position.json"
+        self.stack_file = f"{self.base_name}_stack.json"
+        
+        self.output(f"策略数据文件已绑定: {self.pos_file}")
 
-        # 自动根据类名生成状态文件名
-        self.files = {
-            "pos": f"{self.__class__.__name__}_position.json",
-            "oper": f"{self.__class__.__name__}_oper_stack.json"
-        }
+        # 初始化加载
+        self.on_start()
 
     def output(self, msg, data=None):
-        """标准输出日志"""
-        t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{t}] {msg} {data if data is not None else ''}")
+        """通用日志输出"""
+        t = self.quote.datetime if self.quote.datetime else ""
+        content = f"{msg} {data if data is not None else ''}"
+        print(f"[{t}] {content}")
 
-    def load_data(self):
-        """加载本地状态"""
-        self.position_list = self._load_json(self.files["pos"])
-        self.operation_stack = self._load_json(self.files["oper"])
-        self.output(f"策略恢复 - 持仓层数: {len(self.position_list)}")
-        if self.position_list:
-            self.output(f"当前持仓列表详情: {self.position_list}")
-            print("-" * 80)
+    def log_market_info(self, ma_price):
+        """打印当前市场状态"""
+        print(f">>> 市场状态 | 最新价: {self.quote.last_price} | MA60: {ma_price:.2f}")
 
-    def save_data(self):
-        """保存本地状态"""
-        self._save_json(self.position_list, self.files["pos"])
-        self._save_json(self.operation_stack[-8:], self.files["oper"])
-    
-    def _load_json(self, file_path):
-        if not os.path.exists(file_path): return []
-        try:
-            with open(file_path, "r", encoding="utf-8") as f: return json.load(f)
-        except: return []
-
-    def _save_json(self, data, file_path):
-        try:
-            with open(file_path, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False)
-        except: pass
-
-    def get_ma_price(self):
-        """计算均线价格"""
-        if len(self.klines) < self.QUEUE_LENGTH: return self.quote.last_price
-        # 计算MA
-        ma_val = MA(self.klines, self.QUEUE_LENGTH).ma.iloc[-1]
-        # 处理可能的 NaN 情况 (K线不足时)
-        if math.isnan(ma_val):
-            return self.quote.last_price
-        return ma_val
-
-    def check_position_list_sync(self):
-        """持仓同步校验"""
-        if self.pending_order is not None: return
-        real_pos = self.position.pos_long
-        
-        if real_pos == 0 and self.position_list:
-             self.position_list = []
-             self.operation_stack = []
-             self.output("警告：账户无持仓，重置策略记录")
-
-        if len(self.position_list) > real_pos:
-            self.position_list.pop()
-            self.output(f"同步修正 - Pop后持仓列表: {self.position_list}")
-
-    def on_trade_handler(self, order):
-        """成交回报处理"""
-        price = order.trade_price if order.trade_price else self.quote.last_price
-        
-        # 获取成交时的行情数据
-        current_tick = self.quote.last_price
-        current_ma = self.get_ma_price()
-
-        if order.direction == "BUY" and order.offset == "OPEN":
-            if self.position_list:
-                self.position_list[-1] = price
-            else:
-                self.position_list.append(price)
-            
-            if self.operation_stack and self.operation_stack[-1][1] == "B":
-                 self.operation_stack.pop() 
-            self.operation_stack.append((price, "B"))
-            
-            self.output(f"【买入成交】价格: {price}, 当前持仓: {len(self.position_list)}手")
-
-        elif order.direction == "SELL" and order.offset == "CLOSE":
-            if self.position_list: self.position_list.pop()
-            if self.operation_stack and self.operation_stack[-1][1] == "S":
-                self.operation_stack.pop()
-            self.operation_stack.append((price, "S"))
-            
-            self.output(f"【卖出成交】价格: {price}, 剩余持仓: {len(self.position_list)}手")
-
-        # --- 新增：输出成交时的价格和均线 ---
-        self.output(f"【行情快照】 当前Tick价: {current_tick}, MA60均线价: {current_ma:.2f}")
-
-        self.save_data()
-        self.output(f"当前持仓列表详情: {self.position_list}")
+    def log_separator(self):
+        """打印分割线"""
         print("\n" + "-" * 80 + "\n")
 
-    def execute_order(self, direction, offset, price):
-        """下单执行"""
-        self.output(f"正在下单: {direction} {offset} 目标价:{price}")
-        order = self.api.insert_order(
-            symbol=self.symbol, direction=direction, offset=offset, volume=1, limit_price=price
-        )
-        self.pending_order = order
-
-    def run(self):
-        self.load_data()
-        self.output(f"策略 {self.__class__.__name__} 启动，监控中...")
-
+    # --- 数据持久化 ---
+    def load_list(self, file_path):
+        if not os.path.exists(file_path):
+            self.output(f"未找到历史文件 {file_path}，将作为新策略启动")
+            return []
         try:
-            while self.api.wait_update():
-                # --- 1. 订单状态维护 ---
-                if self.pending_order:
-                    if self.pending_order.status == "FINISHED":
-                        self.on_trade_handler(self.pending_order)
-                        self.pending_order = None
-                    elif self.pending_order.status == "ALIVE":
-                        continue 
-                    else:
-                        self.output(f"订单异常: {self.pending_order.status}")
-                        self.pending_order = None 
-                
-                if self.pending_order: continue
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"读取失败 {file_path}：{str(e)}")
+            return []
 
-                # --- 2. 数据更新 ---
-                self.check_position_list_sync()
-                tick_price = self.quote.last_price
-                ma_price = self.get_ma_price()
-                
-                # --- 3. 核心策略逻辑 ---
+    def save_list(self, data, file_path):
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"保存失败 {file_path}：{str(e)}")
 
-                # [买入逻辑] 只有在价格高于均线时才考虑买入
-                if tick_price > ma_price:
+    def on_start(self):
+        """策略启动，加载状态"""
+        self.position_list = self.load_list(self.pos_file)
+        if self.position_list:
+            self.position_list.sort(reverse=True) # 仅做排序，不做数值修改
+        self.operation_stack = self.load_list(self.stack_file)
+
+    def on_stop(self):
+        """策略停止"""
+        self.save_list(self.position_list, self.pos_file)
+        self.save_list(self.operation_stack[-8:], self.stack_file)
+
+    # --- 辅助功能 ---
+    def get_ma(self):
+        """计算1分钟60周期均线"""
+        if self.klines is None or len(self.klines) < self.ma_length:
+            return None
+        return self.klines.close.iloc[-self.ma_length:].mean()
+
+    def insert_order(self, direction, price, reason=""):
+        """下单封装"""
+        ma = self.get_ma()
+        self.output(f"【发出指令】 {direction} 目标价: {price}")
+        self.output(f"   └─ 理由: {reason}")
+        self.log_market_info(ma if ma else 0)
+        
+        if direction == "BUY":
+            order = self.api.insert_order(symbol=self.symbol, direction="BUY", offset="OPEN", volume=1, limit_price=price)
+        else:
+            order = self.api.insert_order(symbol=self.symbol, direction="SELL", offset="CLOSE", volume=1, limit_price=price)
+        
+        self.current_order = order
+
+    # --- 核心逻辑 ---
+    def run(self):
+        self.output("策略启动")
+        self.log_separator()
+        
+        while True:
+            self.api.wait_update()
+            
+            last_price = self.quote.last_price
+            ma_price = self.get_ma()
+
+            if ma_price is None or pd.isna(ma_price) or pd.isna(last_price):
+                continue
+
+            # ------------------------------------------------------------------
+            # 1. 处理订单状态
+            # ------------------------------------------------------------------
+            if self.current_order:
+                if self.current_order.is_error:
+                    self.output("订单错单", self.current_order.last_msg)
+                    self.current_order = None 
+                    continue
+
+                if self.current_order.status == "FINISHED":
+                    trade_price = self.current_order.trade_price
+                    direction = self.current_order.direction
                     
-                    # 场景A: 空仓启动
-                    if not self.position_list:
-                        target_price = tick_price + 1
-                        self.position_list.append(target_price) # 占位
+                    self.output(f"【成交确认】 {direction} @ {trade_price}")
+                    self.log_market_info(ma_price)
+
+                    if direction == "BUY":
+                        if self.position_list:
+                             self.position_list[-1] = trade_price
+                             self.position_list.sort(reverse=True) 
+                        
+                        if self.operation_stack:
+                            self.operation_stack.pop()
+                            self.operation_stack.append((trade_price, "B"))
+                        
+                        self.output("多单持仓详情", self.position_list)
+                        self.output("最后操作栈", self.operation_stack[-1] if self.operation_stack else [])
+
+                    elif direction == "SELL":
+                        if self.position_list:
+                            self.position_list.pop()
+                            self.position_list.sort(reverse=True)
+
+                        if self.operation_stack:
+                            self.operation_stack.pop()
+                            self.operation_stack.append((trade_price, "S"))
+
+                        self.output("多单持仓详情", self.position_list)
+                        self.output("最后操作栈", self.operation_stack[-1] if self.operation_stack else [])
+                    
+                    self.current_order = None
+                    self.save_list(self.position_list, self.pos_file)
+                    self.log_separator()
+
+                continue 
+
+            # ------------------------------------------------------------------
+            # 2. 状态同步
+            # ------------------------------------------------------------------
+            real_pos = self.position.pos_long
+            list_changed = False 
+
+            # A. 实际持仓变少 -> 平仓修正
+            if real_pos <= self.min_long_position:
+                 if len(self.position_list) > real_pos:
+                     self.position_list = []
+                     list_changed = True
+            
+            if len(self.position_list) > real_pos:
+                self.position_list = self.position_list[:real_pos]
+                self.output("检测到平仓，修正 list", self.position_list)
+                list_changed = True
+            
+            # B. 实际持仓变多 -> 开仓补录
+            while len(self.position_list) < real_pos:
+                self.position_list.append(last_price)
+                self.output(f"检测到外部开仓，补录价格: {last_price}")
+                list_changed = True
+            
+            if list_changed:
+                self.position_list.sort(reverse=True)
+                self.output("同步后的持仓", self.position_list)
+
+            # ------------------------------------------------------------------
+            # 3. 策略信号逻辑
+            # ------------------------------------------------------------------
+            
+            if last_price > ma_price:
+                
+                # A. 绝对初始建仓 (列表为空)
+                if not self.position_list:
+                    if self.current_order is None:
+                        target_price = last_price + 1
+                        self.position_list.append(target_price)
+                        self.position_list.sort(reverse=True)
                         self.operation_stack.append((target_price, "B"))
-                        self.execute_order("BUY", "OPEN", target_price)
-                        self.output(f"触发首单建仓 (Tick:{tick_price} > MA:{ma_price:.2f})")
+                        
+                        reason_msg = "初始建仓 (持仓列表为空)"
+                        self.insert_order("BUY", target_price, reason_msg)
                         continue
 
-                    # 场景B: 下跌补仓
-                    if self.position_list:
-                        layer_index = len(self.position_list) - 1
-                        if layer_index >= len(self.copy_bottom_step):
-                            step_val = self.copy_bottom_step[-1]
-                        else:
-                            step_val = self.copy_bottom_step[layer_index]
-                        
-                        price_diff = self.position_list[-1] - tick_price
-                        
-                        if price_diff >= step_val:
-                            target_price = tick_price + 1
+                # B. 网格加仓 (只要列表不为空，必须检查步长)
+                else:
+                    idx = len(self.position_list) - 1
+                    step_idx = idx if idx < len(self.copy_bottom_step) else -1
+                    step = self.copy_bottom_step[step_idx]
+
+                    bottom_price = self.position_list[-1]
+                    if (bottom_price - last_price) >= step:
+                        if self.current_order is None:
+                            target_price = last_price + 1
+                            
                             self.position_list.append(target_price)
+                            self.position_list.sort(reverse=True)
                             self.operation_stack.append((target_price, "B"))
-                            self.execute_order("BUY", "OPEN", target_price)
-                            self.output(f"触发补仓: 步长满足 (Diff:{price_diff} >= Step:{step_val})")
+                            
+                            reason_msg = f"网格加仓 (最低持仓{bottom_price} - 当前价{last_price} >= 步长{step})"
+                            self.insert_order("BUY", target_price, reason_msg)
                             continue
 
-                # [卖出逻辑] 
-                if self.position_list:
-                    # 场景C: 动态止盈
-                    dynamic_step = len(self.position_list) * self.touch_top_step
-                    
-                    if (tick_price - self.position_list[-1]) >= dynamic_step:
-                        target_price = tick_price - 1
-                        self.operation_stack.append((target_price, "S"))
-                        self.execute_order("SELL", "CLOSE", target_price)
-                        self.output(f"触发止盈: 盈利空间满足 (Diff:{tick_price - self.position_list[-1]} >= DynStep:{dynamic_step})")
-                        continue
-                
-                # 场景D: 追踪卖出
-                if self.position_list and self.operation_stack:
-                    last_op_price, last_op_dir = self.operation_stack[-1]
-                    if last_op_dir == "S" and (tick_price - last_op_price >= self.touch_top_step):
-                        target_price = tick_price - 1
-                        self.operation_stack.append((target_price, "S"))
-                        self.execute_order("SELL", "CLOSE", target_price)
-                        self.output(f"触发追踪卖出 (Price:{tick_price} > LastSell:{last_op_price} + {self.touch_top_step})")
-                        continue
+            # C. 触顶平仓 (止盈)
+            if self.position_list:
+                dynamic_step = last_price * 0.01
+                min_pos_price = self.position_list[-1]
 
-        except KeyboardInterrupt:
-            self.output("手动停止策略")
-        finally:
-            self.save_data()
-            self.output("数据已保存，程序退出")
+                if (last_price - min_pos_price) >= dynamic_step:
+                    if self.current_order is None:
+                        target_price = last_price - 1
+                        self.operation_stack.append((target_price, "S"))
+                        
+                        reason_msg = f"触顶止盈 (当前价{last_price} - 最低持仓{min_pos_price} >= 止盈步长{dynamic_step})"
+                        self.insert_order("SELL", target_price, reason_msg)
+                        continue
 
 if __name__ == "__main__":
-    api = TqApi(
-        account=TqSim(init_balance=100000),
-        backtest=TqBacktest(start_dt=date(2025, 8, 18), end_dt=date(2025, 11, 26)),
-        web_gui=True,
-        auth=TqAuth("cadofa", "cadofa6688"),
-        debug=False
-    )
+    # 示例：现在切换合约会自动生成不同的文件
+    SYMBOL = "DCE.m2601"
+    #SYMBOL = "DCE.m2601"
+    #SYMBOL = "SHFE.rb2601"
     
-    strategy = TrendStepGridStrategy(api)
-    strategy.run()
-    
-    api.close()
+    try:
+        api = TqApi(
+            account=TqSim(init_balance=100000),
+            backtest=TqBacktest(start_dt=date(2025, 8, 1), end_dt=date(2025, 11, 29)),
+            web_gui=True,
+            auth=TqAuth("cadofa", "cadofa6688"),
+            debug=False
+        )
+        
+        strategy = GrabBottomTouchTop_TqSdk(api, SYMBOL)
+        strategy.run()
+
+    except Exception as e:
+        print(f"\n程序运行结束: {e}")
+    finally:
+        if 'strategy' in locals():
+            strategy.on_stop()
