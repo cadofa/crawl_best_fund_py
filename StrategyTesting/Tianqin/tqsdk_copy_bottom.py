@@ -134,6 +134,9 @@ class GrabBottomTouchTop_TqSdk:
             
             last_price = self.quote.last_price
             ma_price = self.get_ma()
+            
+            # 使用 self.quote.price_tick 获取当前合约的最小跳价
+            tick = self.quote.price_tick
 
             if ma_price is None or pd.isna(ma_price) or pd.isna(last_price):
                 continue
@@ -220,7 +223,8 @@ class GrabBottomTouchTop_TqSdk:
                 # A. 绝对初始建仓 (列表为空)
                 if not self.position_list:
                     if self.current_order is None:
-                        target_price = last_price + 1
+                        # [修正] 价格 + 1个tick
+                        target_price = last_price + tick
                         self.position_list.append(target_price)
                         self.position_list.sort(reverse=True)
                         self.operation_stack.append((target_price, "B"))
@@ -238,7 +242,8 @@ class GrabBottomTouchTop_TqSdk:
                     bottom_price = self.position_list[-1]
                     if (bottom_price - last_price) >= step:
                         if self.current_order is None:
-                            target_price = last_price + 1
+                            # [修正] 价格 + 1个tick
+                            target_price = last_price + tick
                             
                             self.position_list.append(target_price)
                             self.position_list.sort(reverse=True)
@@ -250,28 +255,41 @@ class GrabBottomTouchTop_TqSdk:
 
             # C. 触顶平仓 (止盈)
             if self.position_list:
-                # 注意：您原代码此处使用的是动态百分比止盈，如需使用 touch_top_step 请自行替换
-                # 按照题目要求，只修改参数定义部分，不改变此处逻辑
+                # 1. 原策略：动态百分比止盈
                 dynamic_step = last_price * 0.01 
                 min_pos_price = self.position_list[-1]
 
                 if (last_price - min_pos_price) >= dynamic_step:
                     if self.current_order is None:
-                        target_price = last_price - 1
+                        # [修正] 价格 - 1个tick
+                        target_price = last_price - tick
                         self.operation_stack.append((target_price, "S"))
                         
-                        reason_msg = f"触顶止盈 (当前价{last_price} - 最低持仓{min_pos_price} >= 止盈步长{dynamic_step})"
+                        reason_msg = f"触顶止盈1 (当前价{last_price} - 最低持仓{min_pos_price} >= 止盈步长{dynamic_step:.2f})"
+                        self.insert_order("SELL", target_price, reason_msg)
+                        continue
+                
+                # 2. 新增策略：根据持仓数量 * touch_top_step 进行止盈
+                step_threshold = len(self.position_list) * self.touch_top_step
+                
+                if (last_price - min_pos_price) >= step_threshold:
+                    if self.current_order is None:
+                        # [修正] 价格 - 1个tick
+                        target_price = last_price - tick
+                        self.operation_stack.append((target_price, "S"))
+                        
+                        reason_msg = f"触顶止盈2 (当前价{last_price} - 最低持仓{min_pos_price} >= 阶梯阈值{step_threshold:.2f} [持仓数{len(self.position_list)}])"
                         self.insert_order("SELL", target_price, reason_msg)
                         continue
 
 if __name__ == "__main__":
     # 示例：现在切换合约会自动生成不同的文件
-    SYMBOL = "DCE.m2601"
+    SYMBOL = "CZCE.TA601"
     
     try:
         api = TqApi(
             account=TqSim(init_balance=100000),
-            backtest=TqBacktest(start_dt=date(2025, 8, 1), end_dt=date(2025, 11, 29)),
+            backtest=TqBacktest(start_dt=date(2025, 8, 1), end_dt=date(2025, 12, 2)),
             web_gui=True,
             auth=TqAuth("cadofa", "cadofa6688"),
             debug=False
