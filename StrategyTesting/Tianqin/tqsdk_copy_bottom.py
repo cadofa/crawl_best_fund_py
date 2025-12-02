@@ -13,21 +13,33 @@ class GrabBottomTouchTop_TqSdk:
         self.api = api
         self.symbol = symbol
         
-        # 策略参数
-        self.touch_top_step = 6
-        self.copy_bottom_step = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
-        self.min_long_position = 1
-        
-        # 均线参数: 1分钟K线，60周期
+        # 均线参数: 1分钟K线，60周期 (提前定义，供K线数据获取使用)
         self.ma_length = 60
+
+        # --- [修改处开始] ---
+        # 1. 先获取 Quote 对象以读取合约的最小跳价 (price_tick)
+        self.quote = self.api.get_quote(self.symbol)
+        
+        # 获取该合约的一跳是多少钱 (例如: 螺纹钢是1, 焦炭是0.5, 玻璃是1, 纯碱是1等)
+        # 注意：TqSdk会在初始化时自动同步合约信息，此处可直接读取
+        tick = self.quote.price_tick
+        
+        # 2. 策略参数适配
+        # 原参数定义的数值为"跳数"，乘以 tick 得到实际的价格价差
+        self.touch_top_step = 6 * tick
+        
+        raw_bottom_steps = [5,6,8,10,13,15,18,21,34,55,89,55,34,21,18,15,13,10]
+        self.copy_bottom_step = [x * tick for x in raw_bottom_steps]
+        
+        self.min_long_position = 1
+        # --- [修改处结束] ---
         
         # 策略状态
         self.position_list = [] 
         self.operation_stack = []
         self.current_order = None 
         
-        # 数据对象
-        self.quote = self.api.get_quote(self.symbol)
+        # 数据对象 (Quote已在上面获取，这里获取K线和持仓)
         self.klines = self.api.get_kline_serial(self.symbol, duration_seconds=60, data_length=self.ma_length+20)
         self.position = self.api.get_position(self.symbol)
         
@@ -41,6 +53,7 @@ class GrabBottomTouchTop_TqSdk:
         self.stack_file = f"{self.base_name}_stack.json"
         
         self.output(f"策略数据文件已绑定: {self.pos_file}")
+        self.output(f"合约最小跳价: {tick}, 网格步长(实际价格): {self.copy_bottom_step}")
 
         # 初始化加载
         self.on_start()
@@ -237,7 +250,9 @@ class GrabBottomTouchTop_TqSdk:
 
             # C. 触顶平仓 (止盈)
             if self.position_list:
-                dynamic_step = last_price * 0.01
+                # 注意：您原代码此处使用的是动态百分比止盈，如需使用 touch_top_step 请自行替换
+                # 按照题目要求，只修改参数定义部分，不改变此处逻辑
+                dynamic_step = last_price * 0.01 
                 min_pos_price = self.position_list[-1]
 
                 if (last_price - min_pos_price) >= dynamic_step:
@@ -252,8 +267,6 @@ class GrabBottomTouchTop_TqSdk:
 if __name__ == "__main__":
     # 示例：现在切换合约会自动生成不同的文件
     SYMBOL = "DCE.m2601"
-    #SYMBOL = "DCE.m2601"
-    #SYMBOL = "SHFE.rb2601"
     
     try:
         api = TqApi(
