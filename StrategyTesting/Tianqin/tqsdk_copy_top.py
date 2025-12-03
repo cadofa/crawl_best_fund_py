@@ -121,10 +121,11 @@ class GrabTopTouchBom_TqSdk:
             # 开空单，统一使用 OPEN
             order = self.api.insert_order(symbol=self.symbol, direction="SELL", offset="OPEN", volume=1, limit_price=price)
         else:
-            # 买入平空单 (direction == "BUY")
-            
             # --- [修改处：智能判断平今/平昨] ---
+            # 默认使用 CLOSE (适用于中金所、大商所、郑商所的默认情况)
             offset_flag = "CLOSE"
+
+            # 解析交易所代码
             exchange_id = self.symbol.split('.')[0]
             
             # 针对 上期所(SHFE) 和 能源中心(INE)
@@ -136,6 +137,7 @@ class GrabTopTouchBom_TqSdk:
                 else:
                     offset_flag = "CLOSETODAY"
             
+            # 发出平仓指令
             order = self.api.insert_order(symbol=self.symbol, direction="BUY", offset=offset_flag, volume=1, limit_price=price)
         
         self.current_order = order
