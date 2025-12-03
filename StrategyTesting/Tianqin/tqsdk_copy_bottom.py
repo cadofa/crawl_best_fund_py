@@ -283,7 +283,7 @@ class GrabBottomTouchTop_TqSdk:
 
 if __name__ == "__main__":
     # 示例：现在切换合约会自动生成不同的文件
-    SYMBOL = "CZCE.TA601"
+    SYMBOL = "DCE.m2601"
     
     try:
         api = TqApi(
