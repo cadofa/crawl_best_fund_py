@@ -111,16 +111,32 @@ class GrabTopTouchBom_TqSdk:
         return self.klines.close.iloc[-self.ma_length:].mean()
 
     def insert_order(self, direction, price, reason=""):
-        """下单封装"""
+        """下单封装 [已修复上期所平今/平昨问题]"""
         ma = self.get_ma()
         self.output(f"【发出指令】 {direction} 目标价: {price}")
         self.output(f"   └─ 理由: {reason}")
         self.log_market_info(ma if ma else 0)
         
         if direction == "SELL":
+            # 开空单，统一使用 OPEN
             order = self.api.insert_order(symbol=self.symbol, direction="SELL", offset="OPEN", volume=1, limit_price=price)
         else:
-            order = self.api.insert_order(symbol=self.symbol, direction="BUY", offset="CLOSE", volume=1, limit_price=price)
+            # 买入平空单 (direction == "BUY")
+            
+            # --- [修改处：智能判断平今/平昨] ---
+            offset_flag = "CLOSE"
+            exchange_id = self.symbol.split('.')[0]
+            
+            # 针对 上期所(SHFE) 和 能源中心(INE)
+            if exchange_id in ["SHFE", "INE"]:
+                # 检查空单昨仓数量 (pos_short_his)
+                # 如果有昨空，优先平昨；否则平今
+                if self.position.pos_short_his > 0:
+                    offset_flag = "CLOSE"
+                else:
+                    offset_flag = "CLOSETODAY"
+            
+            order = self.api.insert_order(symbol=self.symbol, direction="BUY", offset=offset_flag, volume=1, limit_price=price)
         
         self.current_order = order
 
@@ -283,7 +299,7 @@ class GrabTopTouchBom_TqSdk:
 
 if __name__ == "__main__":
     # 示例：现在切换合约会自动生成不同的文件
-    SYMBOL = "DCE.m2601"
+    SYMBOL = "SHFE.rb2605"
     
     try:
         api = TqApi(
