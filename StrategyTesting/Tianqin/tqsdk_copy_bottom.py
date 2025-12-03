@@ -220,7 +220,7 @@ class GrabBottomTouchTop_TqSdk:
             if last_price > ma_price:
                 
                 # A. 绝对初始建仓 (列表为空)
-                if not self.position_list:
+                if (not self.position_list) or (real_pos < self.min_long_position):
                     if self.current_order is None:
                         # [修正] 价格 + 1个tick
                         target_price = last_price + tick
