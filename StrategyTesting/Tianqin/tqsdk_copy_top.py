@@ -194,17 +194,16 @@ class GrabTopTouchBom_TqSdk:
             list_changed = False 
 
             # A. 实际持仓变少 -> 平仓修正
-            if real_pos <= self.min_short_position:
-                 if len(self.position_list) > real_pos:
-                     self.position_list = []
-                     list_changed = True
-            
-            if len(self.position_list) > real_pos:
-                self.position_list = self.position_list[:real_pos]
-                self.output("检测到平仓，修正 list", self.position_list)
+            # 如果实际持仓小于当前文件记录的持仓，说明有外部平仓操作，
+            # 则依次修改self.position_list列表（将列表尾部多余的持仓去除）
+            while len(self.position_list) > real_pos:
+                self.position_list.pop()
+                self.output("检测到外部平仓，移除尾部持仓")
                 list_changed = True
             
             # B. 实际持仓变多 -> 开仓补录
+            # 如果实际持仓大于当前文件记录的尺寸，说明有外部开仓操作，
+            # 则依次在self.position尾部添加持仓(持仓价格为直接添加当前最新价)
             while len(self.position_list) < real_pos:
                 self.position_list.append(last_price)
                 self.output(f"检测到外部开仓，补录价格: {last_price}")
