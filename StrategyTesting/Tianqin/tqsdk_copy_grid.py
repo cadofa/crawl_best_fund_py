@@ -6,7 +6,7 @@ import time
 from datetime import date
 import pandas as pd
 
-from tqsdk import TqApi, TqAuth, TqSim, TqBacktest
+from tqsdk import TqApi, TqAuth, TqSim, TqBacktest, BacktestFinished
 
 class GrabBottomTop_Dual_TqSdk:
     def __init__(self, api, symbol):
@@ -422,8 +422,15 @@ if __name__ == "__main__":
         strategy = GrabBottomTop_Dual_TqSdk(api, SYMBOL)
         strategy.run()
 
+    except BacktestFinished:   
+        # 死循环保持进程活跃，使 Web GUI 继续提供服务
+        while True:
+            api.wait_update()
+    except KeyboardInterrupt:
+        print("\n用户手动停止")
     except Exception as e:
-        print(f"\n程序运行结束: {e}")
+        print(f"\n程序运行报错: {e}")
     finally:
+        # 兜底保存，防止非回测结束的异常退出导致数据丢失
         if 'strategy' in locals():
             strategy.on_stop()
