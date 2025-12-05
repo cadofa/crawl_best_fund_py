@@ -306,7 +306,7 @@ if __name__ == "__main__":
     try:
         api = TqApi(
             account=TqSim(init_balance=100000),
-            backtest=TqBacktest(start_dt=date(2025, 8, 1), end_dt=date(2025, 12, 2)),
+            backtest=TqBacktest(start_dt=date(2025, 8, 1), end_dt=date(2025, 12, 5)),
             web_gui=True,
             auth=TqAuth("cadofa", "cadofa6688"),
             debug=False
